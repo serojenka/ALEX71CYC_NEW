@@ -37,6 +37,10 @@ static constexpr double saveProgressIntervalSec = 300.0;
 
 static int g_progressSaveCount = 0;
 static std::vector<std::string> g_threadPrivateKeys;
+static std::vector<uint64_t> g_threadJumpSizes;
+static unsigned long long g_candidatesFound = 0ULL;
+static unsigned long long g_jumpsCount = 0ULL;
+static bool g_saveCandidates = false;
 
 //------------------------------------------------------------------------------
 void saveProgressToFile(const std::string &progressStr)
@@ -47,6 +51,18 @@ void saveProgressToFile(const std::string &progressStr)
     } else {
         std::cerr << "Cannot open progress.txt for writing\n";
     }
+}
+
+static inline std::string bytesToHex(const uint8_t* data, size_t len)
+{
+    static constexpr char lut[] = "0123456789abcdef";
+    std::string out; out.reserve(len * 2);
+    for (size_t i = 0; i < len; ++i) {
+        uint8_t b = data[i];
+        out.push_back(lut[b >> 4]);
+        out.push_back(lut[b & 0x0F]);
+    }
+    return out;
 }
 
 static void writeFoundKey(const std::string& privHex,
@@ -60,6 +76,23 @@ static void writeFoundKey(const std::string& privHex,
         return;
     }
     ofs << privHex << ' ' << pubHex << ' ' << wif << ' ' << address << '\n';
+}
+
+static void appendCandidateToFile(const std::string& privHex,
+                                  const std::string& pubHex,
+                                  const std::string& hash160Hex)
+{
+    ++g_candidatesFound;
+    if (!g_saveCandidates) return;
+
+#pragma omp critical(candidates_io)
+    {
+        std::ofstream ofs("candidates.txt", std::ios::app);
+        if (ofs)
+            ofs << privHex << ' ' << pubHex << ' ' << hash160Hex << '\n';
+        else
+            std::cerr << "Cannot open candidates.txt for writing\n";
+    }
 }
 
 //------------------------------------------------------------------------------
@@ -236,6 +269,21 @@ inline void prepareRipemdBlock(const uint8_t* dataSrc, uint8_t* outBlock) {
     outBlock[63] = (uint8_t)( bitLen        & 0xFF);
 }
 
+static inline bool isDeniedPub(const uint8_t pub[33], int denyHexLen)
+{
+    if (denyHexLen <= 0) return false;
+    int fullBytes = denyHexLen / 2;
+    bool halfNibble = denyHexLen & 1;
+
+    for (int i = 0; i < fullBytes; ++i)
+        if (pub[1 + i] != 0x00) return false;
+
+    if (halfNibble) {
+        if ((pub[1 + fullBytes] & 0xF0) != 0x00) return false;
+    }
+    return true;
+}
+
 // Computing hash160 using avx512 (16 hashes per try)
 static void computeHash160BatchBinSingle(int numKeys,
                                          uint8_t pubKeys[][33],
@@ -313,7 +361,10 @@ static void computeHash160BatchBinSingle(int numKeys,
 
 //------------------------------------------------------------------------------
 static void printUsage(const char* programName) {
-    std::cerr << "Usage: " << programName << " -a <Base58_P2PKH> -r <START:END>\n";
+    std::cerr << "Usage: " << programName 
+              << " -a <Base58_P2PKH> -r <START:END>"
+              << " [-p <HEXLEN>] [-j <JUMP>] [-s]"
+              << " [-t <THREADS>] [--public-deny <HEXLEN>]\n";
 }
 
 static std::string formatElapsedTime(double seconds) {
@@ -331,11 +382,14 @@ static std::string formatElapsedTime(double seconds) {
 static void printStatsBlock(int numCPUs, const std::string &targetAddr,
                             const std::string &rangeStr, double mkeysPerSec,
                             unsigned long long totalChecked, double elapsedTime,
-                            int progressSaves, long double progressPercent)
+                            int progressSaves, long double progressPercent,
+                            bool showCand, unsigned long long candCnt,
+                            bool showJump, unsigned long long jumpCnt)
 {
+    const int lines = 9 + (showCand?1:0) + (showJump?1:0);
     static bool firstPrint = true;
     if (!firstPrint) {
-        std::cout << "\033[9A";
+        std::cout << "\033[" << lines << "A";
     } else {
         firstPrint = false;
     }
@@ -348,6 +402,8 @@ static void printStatsBlock(int numCPUs, const std::string &targetAddr,
     std::cout << "Range         : " << rangeStr << "\n";
     std::cout << "Progress      : " << std::fixed << std::setprecision(4) << progressPercent << " %\n";
     std::cout << "Progress Save : " << progressSaves << "\n";
+    if (showCand) std::cout << "Candidates    : " << candCnt << "\n";
+    if (showJump) std::cout << "Jumps         : " << jumpCnt << "\n";
     std::cout.flush();
 }
 
@@ -363,6 +419,14 @@ static std::vector<ThreadRange> g_threadRanges;
 int main(int argc, char* argv[])
 {
     bool addressProvided = false, rangeProvided = false;
+    bool prefixProvided = false, jumpProvided = false, saveProvided = false;
+    bool threadsProvided = false, denyProvided = false;
+    
+    int prefLenHex = 0;
+    uint64_t jumpSize = 0ULL;
+    int userThreads = 0;
+    int denyHexLen = 0;
+    
     std::string targetAddress, rangeInput;
     std::vector<uint8_t> targetHash160;
 
@@ -381,6 +445,36 @@ int main(int argc, char* argv[])
         } else if (!std::strcmp(argv[i], "-r") && i + 1 < argc) {
             rangeInput = argv[++i];
             rangeProvided = true;
+        } else if (!std::strcmp(argv[i], "-p") && i + 1 < argc) {
+            prefLenHex = std::stoi(argv[++i]);
+            prefixProvided = true;
+            if (prefLenHex < 1 || prefLenHex > 40) {
+                std::cerr << "-p must be 1-40\n";
+                return 1;
+            }
+        } else if (!std::strcmp(argv[i], "-j") && i + 1 < argc) {
+            jumpSize = std::stoull(argv[++i]);
+            jumpProvided = true;
+            if (jumpSize == 0) {
+                std::cerr << "-j must be > 0\n";
+                return 1;
+            }
+        } else if (!std::strcmp(argv[i], "-s")) {
+            saveProvided = true;
+        } else if (!std::strcmp(argv[i], "-t") && i + 1 < argc) {
+            userThreads = std::stoi(argv[++i]);
+            threadsProvided = true;
+            if (userThreads < 1) {
+                std::cerr << "-t must be > 0\n";
+                return 1;
+            }
+        } else if (!std::strcmp(argv[i], "--public-deny") && i + 1 < argc) {
+            denyHexLen = std::stoi(argv[++i]);
+            denyProvided = true;
+            if (denyHexLen < 1 || denyHexLen > 64) {
+                std::cerr << "--public-deny must be 1-64\n";
+                return 1;
+            }
         } else {
             std::cerr << "Unknown parameter: " << argv[i] << "\n";
             printUsage(argv[0]);
@@ -392,6 +486,15 @@ int main(int argc, char* argv[])
         printUsage(argv[0]);
         return 1;
     }
+    if (jumpProvided && !prefixProvided) {
+        std::cerr << "-j requires -p\n";
+        return 1;
+    }
+    
+    g_saveCandidates = saveProvided;
+    const bool partialEnabled = prefixProvided;
+    const bool jumpEnabled = jumpProvided;
+    const bool pubDenyEnabled = denyProvided;
 
     const size_t colonPos = rangeInput.find(':');
     if (colonPos == std::string::npos) {
@@ -432,8 +535,14 @@ int main(int argc, char* argv[])
     
     const long double totalRangeLD = hexStrToLongDouble(rangeSizeHex);
 
-    const int numCPUs = omp_get_num_procs();
+    const int hwThreads = omp_get_num_procs();
+    const int numCPUs = threadsProvided ? std::min(userThreads, hwThreads) : hwThreads;
+    
     g_threadPrivateKeys.resize(numCPUs, "0");
+    g_threadJumpSizes.resize(numCPUs);
+    for (int t = 0; t < numCPUs; t++) {
+        g_threadJumpSizes[t] = jumpEnabled ? (jumpSize * (t + 1)) : 0ULL;
+    }
 
     auto [chunkSize, remainder] = bigNumDivide(rangeSize, (uint64_t)numCPUs);
     g_threadRanges.resize(numCPUs);
@@ -472,7 +581,7 @@ int main(int argc, char* argv[])
       shared(globalComparedCount, globalElapsedTime, mkeysPerSec, matchFound, \
              foundPrivateKeyHex, foundPublicKeyHex, foundWIF, \
              tStart, lastStatusTime, lastSaveTime, g_progressSaveCount, \
-             g_threadPrivateKeys)
+             g_threadPrivateKeys, g_candidatesFound, g_jumpsCount)
     {
         const int threadId = omp_get_thread_num();
 
@@ -512,6 +621,15 @@ int main(int argc, char* argv[])
 
         // Local count
         unsigned long long localComparedCount = 0ULL;
+        unsigned long long localJumps = 0ULL;
+        
+        Int jumpInt;
+        uint64_t threadJumpSize = 0ULL;
+        if (jumpEnabled) {
+            threadJumpSize = g_threadJumpSizes[threadId];
+            std::ostringstream oss; oss << std::hex << threadJumpSize;
+            jumpInt = hexToInt(oss.str());
+        }
 
         // Download the target (hash160) в __m128i for fast compare
         __m128i target16 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(targetHash160.data()));
@@ -592,55 +710,110 @@ int main(int argc, char* argv[])
             }
 
             // Construct local buffeer
+            unsigned int pendingJumps = 0;
+            
             for (int i = 0; i < fullBatchSize; i++) {
-                pointToCompressedBin(pointBatch[i], localPubKeys[localBatchCount]);
+                uint8_t tmpPub[33];
+                pointToCompressedBin(pointBatch[i], tmpPub);
+                
+                if (pubDenyEnabled && isDeniedPub(tmpPub, denyHexLen)) {
+                    ++localComparedCount;
+                    continue;
+                }
+                
+                std::memcpy(localPubKeys[localBatchCount], tmpPub, 33);
                 pointIndices[localBatchCount] = i;
                 localBatchCount++;
 
-                // 8 keys are ready - time to use avx512
+                // 16 keys are ready - time to use avx512
                 if (localBatchCount == HASH_BATCH_SIZE) {
                     computeHash160BatchBinSingle(localBatchCount, localPubKeys, localHashResults);
                     // Results check
                     for (int j = 0; j < HASH_BATCH_SIZE; j++) {
-                        __m128i cand16 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(localHashResults[j]));
-                        __m128i cmp = _mm_cmpeq_epi8(cand16, target16);
-                        if (_mm_movemask_epi8(cmp) == 0xFFFF) {
-                            // Checking last 4 bytes (20 - 16)
-                            if (!matchFound && std::memcmp(localHashResults[j], targetHash160.data(), 20) == 0) {
-                                #pragma omp critical
-                                {
-                                    if (!matchFound) {
-                                        matchFound = true;
-                                        auto tEndTime = std::chrono::high_resolution_clock::now();
-                                        globalElapsedTime = std::chrono::duration<double>(tEndTime - tStart).count();
-                                        mkeysPerSec = (double)(globalComparedCount + localComparedCount) / globalElapsedTime / 1e6;
-
-                                        // Recovering private key
-                                        Int matchingPrivateKey;
-                                        matchingPrivateKey.Set(&currentBatchKey);
-                                        int idx = pointIndices[j];
-                                        if (idx < 256) {
-                                            Int offset; offset.SetInt32(idx);
-                                            matchingPrivateKey.Add(&offset);
-                                        } else {
-                                            Int offset; offset.SetInt32(idx - 256);
-                                            matchingPrivateKey.Sub(&offset);
-                                        }
-                                        foundPrivateKeyHex = padHexTo64(intToHex(matchingPrivateKey));
-                                        Point matchedPoint = pointBatch[idx];
-                                        foundPublicKeyHex  = pointToCompressedHex(matchedPoint);
-                                        foundWIF = P2PKHDecoder::compute_wif(foundPrivateKeyHex, true);
-                                    }
-                                }
-                                #pragma omp cancel parallel
+                        const uint8_t* cand = localHashResults[j];
+                        
+                        bool prefixOK = true;
+                        if (partialEnabled) {
+                            const int prefBytes = prefLenHex / 2;
+                            const bool halfNibble = (prefLenHex & 1);
+                            
+                            if (prefBytes && std::memcmp(cand, targetHash160.data(), prefBytes) != 0)
+                                prefixOK = false;
+                            
+                            if (prefixOK && halfNibble) {
+                                if ((cand[prefBytes] & 0xF0) != (targetHash160[prefBytes] & 0xF0))
+                                    prefixOK = false;
                             }
-                            localComparedCount++;
-                        } else {
-                            localComparedCount++;
+                            
+                            if (prefixOK) {
+                                Int cPriv = currentBatchKey;
+                                int idx = pointIndices[j];
+                                if (idx < 256) {
+                                    Int off; off.SetInt32(idx);
+                                    cPriv.Add(&off);
+                                } else {
+                                    Int off; off.SetInt32(idx - 256);
+                                    cPriv.Sub(&off);
+                                }
+                                
+                                appendCandidateToFile(
+                                    padHexTo64(intToHex(cPriv)),
+                                    pointToCompressedHex(pointBatch[idx]),
+                                    bytesToHex(cand, 20)
+                                );
+                                if (jumpEnabled) ++pendingJumps;
+                            }
                         }
+                        
+                        if (std::memcmp(cand, targetHash160.data(), 20) == 0) {
+                            #pragma omp critical(full_match)
+                            {
+                                if (!matchFound) {
+                                    matchFound = true;
+                                    auto tEndTime = std::chrono::high_resolution_clock::now();
+                                    globalElapsedTime = std::chrono::duration<double>(tEndTime - tStart).count();
+                                    mkeysPerSec = (double)(globalComparedCount + localComparedCount) / globalElapsedTime / 1e6;
+
+                                    // Recovering private key
+                                    Int matchingPrivateKey;
+                                    matchingPrivateKey.Set(&currentBatchKey);
+                                    int idx = pointIndices[j];
+                                    if (idx < 256) {
+                                        Int offset; offset.SetInt32(idx);
+                                        matchingPrivateKey.Add(&offset);
+                                    } else {
+                                        Int offset; offset.SetInt32(idx - 256);
+                                        matchingPrivateKey.Sub(&offset);
+                                    }
+                                    foundPrivateKeyHex = padHexTo64(intToHex(matchingPrivateKey));
+                                    Point matchedPoint = pointBatch[idx];
+                                    foundPublicKeyHex  = pointToCompressedHex(matchedPoint);
+                                    foundWIF = P2PKHDecoder::compute_wif(foundPrivateKeyHex, true);
+                                }
+                            }
+                            #pragma omp cancel parallel
+                        }
+                        ++localComparedCount;
                     }
                     localBatchCount = 0;
                 }
+            }
+
+            if (jumpEnabled && pendingJumps > 0) {
+                for (unsigned int pj = 0; pj < pendingJumps; ++pj)
+                    privateKey.Add(&jumpInt);
+                
+                startPoint = secp.ComputePublicKey(&privateKey);
+                
+                unsigned long long skipped = static_cast<unsigned long long>(pendingJumps) * threadJumpSize;
+                localComparedCount += skipped;
+                localJumps += pendingJumps;
+                
+                #pragma omp atomic
+                g_jumpsCount += pendingJumps;
+                
+                pendingJumps = 0;
+                if (intGreater(privateKey, threadRangeEnd)) break;
             }
 
             // Next step
@@ -668,7 +841,8 @@ int main(int argc, char* argv[])
                     printStatsBlock(numCPUs, targetAddress, displayRange,
                                     mkeysPerSec, globalComparedCount,
                                     globalElapsedTime, g_progressSaveCount,
-                                    progressPercent);
+                                    progressPercent, partialEnabled, g_candidatesFound,
+                                    jumpEnabled, g_jumpsCount);
                     lastStatusTime = now;
                 }
             }

@@ -32,6 +32,7 @@ static int                          g_progressSaveCount = 0;
 static unsigned long long           g_candidatesFound   = 0ULL;
 static unsigned long long           g_jumpsCount        = 0ULL;
 static uint64_t                     g_jumpSize          = 0ULL;
+static std::vector<uint64_t>        g_threadJumpSizes;
 static std::vector<std::string>     g_threadPrivateKeys;
 static bool                         g_saveCandidates    = false;
 
@@ -432,6 +433,11 @@ int main(int argc, char* argv[])
     int hwThreads = omp_get_num_procs();
     int numCPUs   = tOK ? std::min(userThreads, hwThreads) : hwThreads;
 
+    g_threadJumpSizes.resize(numCPUs);
+    for(int t=0; t<numCPUs; ++t){
+        g_threadJumpSizes[t] = jumpEnabled ? (jumpSize * (t + 1)) : 0ULL;
+    }
+
     std::string targetHashHex = bytesToHex(targetHash160.data(),
                                            targetHash160.size());
 
@@ -517,8 +523,10 @@ int main(int argc, char* argv[])
         unsigned long long localJumps   =0ULL;
 
         Int jumpInt;
+        uint64_t threadJumpSize = 0ULL;
         if(jumpEnabled){
-            std::ostringstream oss; oss << std::hex << g_jumpSize;
+            threadJumpSize = g_threadJumpSizes[tid];
+            std::ostringstream oss; oss << std::hex << threadJumpSize;
             jumpInt = hexToInt(oss.str());
         }
 
@@ -636,7 +644,7 @@ int main(int argc, char* argv[])
                 base = secp.ComputePublicKey(&priv);
 
                 unsigned long long skipped =
-                    static_cast<unsigned long long>(pendingJumps) * g_jumpSize;
+                    static_cast<unsigned long long>(pendingJumps) * threadJumpSize;
                 localChecked += skipped;
                 localJumps   += pendingJumps;
 
