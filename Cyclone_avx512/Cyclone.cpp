@@ -631,7 +631,7 @@ int main(int argc, char* argv[])
             jumpInt = hexToInt(oss.str());
         }
 
-        // Download the target (hash160) в __m128i for fast compare
+        // Load the target (hash160) into __m128i for fast compare
         __m128i target16 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(targetHash160.data()));
 
         // main
@@ -709,7 +709,7 @@ int main(int argc, char* argv[])
                 pointBatch[POINTS_BATCH_SIZE + i] = tempPoint;
             }
 
-            // Construct local buffeer
+            // Construct local buffer
             unsigned int pendingJumps = 0;
             
             for (int i = 0; i < fullBatchSize; i++) {
@@ -725,7 +725,7 @@ int main(int argc, char* argv[])
                 pointIndices[localBatchCount] = i;
                 localBatchCount++;
 
-                // 16 keys are ready - time to use avx512
+                // HASH_BATCH_SIZE keys are ready - time to use avx512
                 if (localBatchCount == HASH_BATCH_SIZE) {
                     computeHash160BatchBinSingle(localBatchCount, localPubKeys, localHashResults);
                     // Results check
