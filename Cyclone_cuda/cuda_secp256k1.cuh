@@ -25,6 +25,10 @@ __constant__ uint256_t secp256k1_n = {{0xBFD25E8CD0364141ULL, 0xBAAEDCE6AF48A03B
 __constant__ uint256_t secp256k1_gx = {{0x59F2815B16F81798ULL, 0x029BFCDB2DCE28D9ULL, 0x55A06295CE870B07ULL, 0x79BE667EF9DCBBACULL}};
 __constant__ uint256_t secp256k1_gy = {{0x9C47D08FFB10D4B8ULL, 0xFD17B448A6855419ULL, 0x5DA4FBFC0E1108A8ULL, 0x483ADA7726A3C465ULL}};
 
+// Forward declarations
+__device__ void uint256_mod_mul(uint256_t* result, const uint256_t* a, const uint256_t* b, const uint256_t* mod);
+__device__ void uint256_mod_sqr(uint256_t* result, const uint256_t* a, const uint256_t* mod);
+
 // Modular inverse using Fermat's little theorem: a^(-1) = a^(p-2) mod p
 __device__ void uint256_mod_inv(uint256_t* result, const uint256_t* a, const uint256_t* mod) {
     // Calculate p-2

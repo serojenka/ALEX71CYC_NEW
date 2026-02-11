@@ -116,21 +116,5 @@ static void generate_wif(const char* privkey_hex, bool compressed, char* wif_out
     // Encode to base58
     base58_encode(payload, payload_len, wif_output);
 }
-    
-    if (compressed) {
-        payload[payload_len++] = 0x01;
-    }
-    
-    // Calculate checksum
-    uint8_t hash[32];
-    sha256_double_openssl(payload, payload_len, hash);
-    
-    // Append checksum
-    memcpy(payload + payload_len, hash, 4);
-    payload_len += 4;
-    
-    // Encode to base58
-    base58_encode(payload, payload_len, wif_output);
-}
 
 #endif // CUDA_WIF_H

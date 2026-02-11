@@ -42,27 +42,6 @@ struct SearchResult {
 __device__ SearchResult d_result;
 __device__ bool d_found_flag = false;
 
-// Utility functions
-__device__ void parse_hex_to_uint256(const char* hex, uint256_t* out) {
-    uint256_set_zero(out);
-    int len = 0;
-    while (hex[len] != '\0' && len < 64) len++;
-    
-    for (int i = 0; i < len && i < 64; i++) {
-        char c = hex[len - 1 - i];
-        uint64_t digit = 0;
-        if (c >= '0' && c <= '9') digit = c - '0';
-        else if (c >= 'a' && c <= 'f') digit = c - 'a' + 10;
-        else if (c >= 'A' && c <= 'F') digit = c - 'A' + 10;
-        
-        int word_idx = i / 16;
-        int bit_offset = (i % 16) * 4;
-        if (word_idx < 4) {
-            out->d[word_idx] |= (digit << bit_offset);
-        }
-    }
-}
-
 // Scalar multiplication using double-and-add
 __device__ void point_mul(point_t* result, const uint256_t* scalar) {
     point_t temp, acc;
@@ -448,9 +427,6 @@ int main(int argc, char** argv) {
         for (int i = 0; i < 20; i++) {
             printf("%02x", h_result.hash160[i]);
         }
-        std::cout << std::endl;
-        
-        std::cout << "P2PKH Address : " << target_address << std::endl;
         std::cout << std::endl;
         
         std::cout << "P2PKH Address : " << target_address << std::endl;
