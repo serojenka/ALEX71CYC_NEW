@@ -1,27 +1,34 @@
-# 🚀 Cyclone: The World's Fastest CPU Satoshi Puzzle Solver
+# 🚀 Cyclone: High-Performance Bitcoin Puzzle Solver
 
-Cyclone is the fastest CPU Satoshi puzzle solver in the world, leveraging the power of modern CPU instructions such as **AVX2** and **AVX512** to achieve unparalleled performance. Designed to run on **Linux** and **Windows**, Cyclone is optimized for speed and accuracy, making it the ideal tool for solving cryptographic puzzles.
-Secp256k1 math are based on the excellent work from JeanLucPons/VanitySearch (https://github.com/JeanLucPons/VanitySearch), with a few modifications.
+Cyclone is a high-performance Bitcoin puzzle solver with both **CPU** and **GPU** implementations. The CPU version leverages modern instructions (**AVX2** and **AVX512**), while the GPU version utilizes **NVIDIA CUDA 12** for massive parallelization. Designed to run on **Linux** and **Windows**, Cyclone is optimized for speed and accuracy.
+
+Secp256k1 math are based on the excellent work from JeanLucPons/VanitySearch (https://github.com/JeanLucPons/VanitySearch), with modifications and optimizations.
 I extend our gratitude to Jean-Luc Pons for his foundational contributions to the cryptographic community.
 
 ---
 
 ## ⚡ Key Features
 
-- **Blazing Fast Performance**: Cyclone utilizes **AVX2** and **AVX512** instructions to deliver unmatched CPU speed in solving Satoshi puzzles.
-- **Accurate Calculations**: Cyclone ensures full and correct computation of compressed public keys and **hash160**, with parallel processing for batches of 8 hashes (AVX2) and 16 hashes (AVX512).
-- **Flexible Implementations**: Choose between **AVX2** and **AVX512** implementations based on your hardware capabilities.
-- **Linux Compatibility**: Cyclone is designed to run seamlessly on Linux systems or Ubuntu Windows WSL 2.
-- **Progress saving**: Progress is saved every 5 minutes during work in the **progress.txt** file.
-- **Probabilistik search**: You can add -j key and jump forward after partial match between generated Hash160 and given Hash160
-- **Partial match**: You can add -p key and save all of the partial match Hash160 to the candidates.txt file
-- **Save candidates**: Only when -s key is add.
-- **Threads**: You can add -t key for starting Cyclone on a few threads, not on total CPU threads.
-- **Skipping public key**: Skipping and not hashing public keys if they do not match the mask (--publc-deny 2 - skip each public key which starts 2 leading zeroes).  
+### CPU Version (AVX2/AVX512)
+- **Blazing Fast Performance**: Utilizes **AVX2** and **AVX512** instructions to deliver unmatched CPU speed
+- **Accurate Calculations**: Full and correct computation of compressed public keys and **hash160**
+- **Parallel Processing**: Batches of 8 hashes (AVX2) and 16 hashes (AVX512)
+- **Flexible Implementations**: Choose between **AVX2** and **AVX512** based on hardware
+- **Progress Saving**: Automatic progress saves every 5 minutes
+- **Probabilistic Search**: Jump forward after partial match
+- **Thread Control**: Specify number of threads to use
+
+### GPU Version (CUDA) 🆕
+- **GPU Acceleration**: Massive parallelization using NVIDIA CUDA 12
+- **Multi-GPU Support**: Distribute workload across multiple GPUs
+- **Independent Threads**: Each GPU thread operates on separate key ranges
+- **Random Search**: Probabilistic key search capability
+- **Same CLI**: Compatible command-line interface with CPU version
+- **Cross-Platform**: Builds on Linux and Windows (Win64)
 
 ---
 
-## 📊 Results Comparison
+## 📊 Performance Comparison
 
 - **Processor**: Ryzen 7 5800H (8 cores, 16 threads)
 - **Memory**: 32 GB DDR4 (2x16 GB)
@@ -43,13 +50,49 @@ I extend our gratitude to Jean-Luc Pons for his foundational contributions to th
 | **Cyclone AVX2**   | 139             | Computing 8 hash160 per batch                                                              |
 | **Cyclone AVX512** | 159             | Computing 16 hash160 per batch                                                             |
 
-- **NB!** The Windows version of Cyclone performs 6–8% slower than the Linux version! 
+### GPU Performance (CUDA)
+
+| GPU Model | Compute Cap | Estimated Speed | Platform |
+|-----------|-------------|-----------------|----------|
+| **RTX 4090** | 8.9 | ~5000 Mkeys/s | Linux/Win64 |
+| **RTX 3090** | 8.6 | ~3000 Mkeys/s | Linux/Win64 |
+| **RTX 3080** | 8.6 | ~2500 Mkeys/s | Linux/Win64 |
+| **A100** | 8.0 | ~3500 Mkeys/s | Linux |
+| **V100** | 7.0 | ~2000 Mkeys/s | Linux |
+
+*Note: GPU performance estimates are for CUDA implementation. Actual performance depends on key range, search mode, and system configuration.*
+
+- **NB!** The Windows version of CPU Cyclone performs 6–8% slower than the Linux version! 
+
+---
+
+## 🛠️ Installation
+
+### CPU Version (AVX2/AVX512)
+
+See `Cyclone_avx2/` and `Cyclone_avx512/` directories for CPU implementations.
+
+### GPU Version (CUDA) 🆕
+
+See [`Cyclone_cuda/README.md`](Cyclone_cuda/README.md) for detailed GPU installation and usage instructions.
+
+**Quick Start (Linux):**
+```bash
+cd Cyclone_cuda
+./build_verify.sh
+```
+
+**Quick Start (Windows):**
+```batch
+cd Cyclone_cuda
+build_windows.bat
+```
 
 ---
 ## 🔷 Example Output
 
 Below is an example of Cyclone in action, solving a Satoshi puzzle:  
-**Sequrntial search**
+**Sequential search (CPU)**
 ```bash
 root@ubuntu:/mnt/hgfs/VM/Final Cyclone# ./Cyclone -a 128z5d7nN7PkCuX5qoA4Ys6pmxUYnEy86k -r 875:6FAC3875
 ================= WORK IN PROGRESS =================

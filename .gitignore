@@ -1,0 +1,54 @@
+# Compiled executables
+*.exe
+*.out
+Cyclone_avx2/Cyclone
+Cyclone_avx512/Cyclone
+Cyclone_cuda/Cyclone_cuda
+!Cyclone_cuda/
+
+# Object files
+*.o
+*.obj
+
+# CUDA compiled files
+*.ptx
+*.cubin
+*.fatbin
+
+# Build directories
+build/
+dist/
+*.dSYM/
+
+# Output files
+found_keys.txt
+candidates.txt
+progress.txt
+
+# Temporary files
+*.tmp
+*.swp
+*.swo
+*~
+.DS_Store
+
+# IDE files
+.vscode/
+.idea/
+*.suo
+*.user
+*.ncb
+*.aps
+*.pch
+*.vspscc
+*.vssscc
+*.bak
+*.cache
+
+# Windows specific
+Thumbs.db
+ehthumbs.db
+
+# Linux specific
+*.so
+*.a
