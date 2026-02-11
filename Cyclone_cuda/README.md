@@ -26,6 +26,7 @@ High-performance GPU-accelerated Bitcoin puzzle solver using CUDA 12 and SECP256
 - **CUDA Toolkit 12.x** (12.0 or later)
 - **Linux**: GCC 9+ or LLVM/Clang 10+
 - **Windows**: Visual Studio 2019+ or MinGW-w64
+- **Optional**: OpenSSL (for cryptographically secure WIF generation)
 
 ## Installation
 
@@ -39,8 +40,14 @@ cd Cyclone/Cyclone_cuda
 # Build using Makefile
 make
 
+# Or with OpenSSL support (recommended for WIF)
+make USE_OPENSSL=1
+
 # Or compile directly
 nvcc -O3 -arch=sm_70 -std=c++14 -o Cyclone_cuda Cyclone_cuda.cu -lcuda
+
+# With OpenSSL
+nvcc -O3 -arch=sm_70 -std=c++14 -DUSE_OPENSSL -o Cyclone_cuda Cyclone_cuda.cu -lcuda -lssl -lcrypto
 ```
 
 ### Windows

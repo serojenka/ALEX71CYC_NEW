@@ -7,6 +7,17 @@ CUDA_ARCH = sm_70
 CUDA_FLAGS = -O3 -arch=$(CUDA_ARCH) -std=c++14
 TARGET = Cyclone_cuda
 
+# Optional OpenSSL support (for proper WIF generation)
+# Uncomment to enable:
+# USE_OPENSSL = 1
+
+ifdef USE_OPENSSL
+    CUDA_FLAGS += -DUSE_OPENSSL
+    SSL_LIBS = -lssl -lcrypto
+else
+    SSL_LIBS =
+endif
+
 # Source files
 SOURCES = Cyclone_cuda.cu
 HEADERS = cuda_uint256.cuh cuda_secp256k1.cuh cuda_hash.cuh
@@ -16,12 +27,12 @@ ifeq ($(OS),Windows_NT)
     # Windows build
     TARGET_EXT = .exe
     RM = del /Q
-    CUDA_LIBS = -lcuda
+    CUDA_LIBS = -lcuda $(SSL_LIBS)
 else
     # Linux build
     TARGET_EXT =
     RM = rm -f
-    CUDA_LIBS = -lcuda
+    CUDA_LIBS = -lcuda $(SSL_LIBS)
 endif
 
 # Default target
@@ -30,6 +41,9 @@ all: $(TARGET)$(TARGET_EXT)
 # Build target
 $(TARGET)$(TARGET_EXT): $(SOURCES) $(HEADERS)
 	@echo "Building Cyclone CUDA for CUDA 12..."
+ifdef USE_OPENSSL
+	@echo "Using OpenSSL for cryptographic functions"
+endif
 	$(NVCC) $(CUDA_FLAGS) -o $(TARGET)$(TARGET_EXT) $(SOURCES) $(CUDA_LIBS)
 	@echo "Build complete: $(TARGET)$(TARGET_EXT)"
 

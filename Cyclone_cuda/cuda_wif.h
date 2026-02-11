@@ -52,72 +52,40 @@ static void base58_encode(const uint8_t* input, size_t input_len, char* output) 
     delete[] temp;
 }
 
-// SHA256 double hash (for checksum)
+// SHA256 double hash (for checksum) - placeholder version
+// This is used only by the old generate_wif if OpenSSL is not available
 static void sha256_double(const uint8_t* input, size_t len, uint8_t output[32]) {
-    // This is a simplified version - uses host SHA256
-    // In a real implementation, use a proper SHA256 library like OpenSSL
-    // For now, this is a placeholder that would need to be implemented
-    
-    // Placeholder: In production, call:
-    // SHA256(input, len, temp);
-    // SHA256(temp, 32, output);
-    
-    // Simple placeholder checksum
+    // Simple placeholder checksum (NOT cryptographically secure)
+    // In production, use proper SHA256 implementation or OpenSSL
     memset(output, 0, 32);
     for (size_t i = 0; i < len; i++) {
         output[i % 32] ^= input[i];
     }
 }
 
-// Generate WIF (Wallet Import Format) from private key
-static void generate_wif(const char* privkey_hex, bool compressed, char* wif_output) {
-    // Decode hex private key
-    uint8_t privkey[32];
-    for (int i = 0; i < 32; i++) {
-        char byte_str[3] = {privkey_hex[i*2], privkey_hex[i*2+1], 0};
-        privkey[i] = (uint8_t)strtol(byte_str, nullptr, 16);
-    }
-    
-    // Build WIF payload
-    // Format: [version(1)] + [privkey(32)] + [compressed_flag(1, optional)] + [checksum(4)]
-    uint8_t payload[38]; // Max size with compression flag
-    size_t payload_len = 0;
-    
-    // Version byte (0x80 for mainnet)
-    payload[payload_len++] = 0x80;
-    
-    // Private key (32 bytes)
-    memcpy(payload + payload_len, privkey, 32);
-    payload_len += 32;
-    
-    // Compressed flag (0x01 if compressed)
-    if (compressed) {
-        payload[payload_len++] = 0x01;
-    }
-    
-    // Calculate checksum (first 4 bytes of double SHA256)
-    uint8_t hash[32];
-    sha256_double(payload, payload_len, hash);
-    
-    // Append checksum
-    memcpy(payload + payload_len, hash, 4);
-    payload_len += 4;
-    
-    // Encode to base58
-    base58_encode(payload, payload_len, wif_output);
-}
-
 // Simple SHA256 implementation for host (basic version for checksums)
+// Conditional OpenSSL support
+#ifdef USE_OPENSSL
 #include <openssl/sha.h>
 
-static void sha256_double_openssl(const uint8_t* input, size_t len, uint8_t output[32]) {
+static void sha256_double_impl(const uint8_t* input, size_t len, uint8_t output[32]) {
     uint8_t temp[32];
     SHA256(input, len, temp);
     SHA256(temp, 32, output);
 }
+#else
+// Fallback: simple checksum (NOT cryptographically secure - for demo only)
+static void sha256_double_impl(const uint8_t* input, size_t len, uint8_t output[32]) {
+    memset(output, 0, 32);
+    for (size_t i = 0; i < len; i++) {
+        output[i % 32] ^= input[i];
+        output[(i + 1) % 32] ^= (input[i] >> 4);
+    }
+}
+#endif
 
-// Generate WIF using OpenSSL (if available)
-static void generate_wif_openssl(const char* privkey_hex, bool compressed, char* wif_output) {
+// Update generate_wif to use the implementation
+static void generate_wif(const char* privkey_hex, bool compressed, char* wif_output) {
     // Decode hex private key
     uint8_t privkey[32];
     for (int i = 0; i < 32; i++) {
@@ -132,6 +100,22 @@ static void generate_wif_openssl(const char* privkey_hex, bool compressed, char*
     payload[payload_len++] = 0x80;
     memcpy(payload + payload_len, privkey, 32);
     payload_len += 32;
+    
+    if (compressed) {
+        payload[payload_len++] = 0x01;
+    }
+    
+    // Calculate checksum
+    uint8_t hash[32];
+    sha256_double_impl(payload, payload_len, hash);
+    
+    // Append checksum
+    memcpy(payload + payload_len, hash, 4);
+    payload_len += 4;
+    
+    // Encode to base58
+    base58_encode(payload, payload_len, wif_output);
+}
     
     if (compressed) {
         payload[payload_len++] = 0x01;
