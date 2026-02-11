@@ -28,7 +28,7 @@ if exist Cyclone_cuda.exe (
 
 REM Build
 echo [3/3] Building Cyclone CUDA...
-nvcc -O3 -arch=sm_70 -std=c++14 -o Cyclone_cuda.exe Cyclone_cuda.cu
+nvcc -O3 -arch=sm_70 -std=c++14 -o Cyclone_cuda.exe Cyclone_cuda.cu -lcuda
 
 if %errorlevel% equ 0 (
     echo.

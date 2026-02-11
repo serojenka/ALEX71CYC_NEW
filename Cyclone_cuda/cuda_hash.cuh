@@ -205,6 +205,10 @@ __constant__ int ripemd160_s_right[80] = {
 };
 
 __device__ void ripemd160(const uint8_t* data, uint32_t len, uint8_t hash[20]) {
+    // NOTE: This is a simplified RIPEMD160 implementation
+    // It works correctly for inputs where final padding fits in one block (< 56 bytes after data)
+    // For production use with longer inputs, complete the multi-block padding logic
+    
     uint32_t h[5] = {0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476, 0xC3D2E1F0};
     
     uint8_t buffer[64];

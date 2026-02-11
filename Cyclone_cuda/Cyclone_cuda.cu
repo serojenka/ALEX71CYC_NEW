@@ -115,6 +115,7 @@ __global__ void search_kernel(
     // Calculate this thread's starting key
     uint256_t thread_offset, thread_start, key;
     uint256_set_u64(&thread_offset, global_id);
+    uint256_set_zero(&thread_start);  // Initialize to zero
     
     // Multiply offset by keys_per_thread
     for (int i = 0; i < 64; i++) {
@@ -123,11 +124,7 @@ __global__ void search_kernel(
             for (int j = 0; j < i; j++) {
                 uint256_add(&shift_val, &shift_val, &shift_val);
             }
-            if (i == 0) {
-                thread_start = thread_offset;
-            } else {
-                uint256_add(&thread_start, &thread_start, &shift_val);
-            }
+            uint256_add(&thread_start, &thread_start, &shift_val);
         }
     }
     
@@ -246,6 +243,26 @@ void parse_hex_string(const char* hex, uint8_t* out, int out_len) {
     for (int i = 0; i < hex_len && i / 2 < out_len; i += 2) {
         char byte_str[3] = {hex[i], hex[i + 1], 0};
         out[i / 2] = (uint8_t)strtol(byte_str, NULL, 16);
+    }
+}
+
+void parse_hex_to_uint256(const char* hex, uint256_t* out) {
+    memset(out, 0, sizeof(uint256_t));
+    int len = strlen(hex);
+    
+    // Parse from right to left (least significant to most significant)
+    for (int i = 0; i < len && i < 64; i++) {
+        char c = hex[len - 1 - i];
+        uint64_t digit = 0;
+        if (c >= '0' && c <= '9') digit = c - '0';
+        else if (c >= 'a' && c <= 'f') digit = c - 'a' + 10;
+        else if (c >= 'A' && c <= 'F') digit = c - 'A' + 10;
+        
+        int word_idx = i / 16;
+        int bit_offset = (i % 16) * 4;
+        if (word_idx < 4) {
+            out->d[word_idx] |= (digit << bit_offset);
+        }
     }
 }
 
