@@ -47,11 +47,13 @@ For the secp256k1 prime `p = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
 - **R = 2^256 mod p**
   ```
   0x00000000000000000000000000000000000000000000000000000001000003D1
+  d[0] = 0x00000001000003D1ULL, d[1] = 0, d[2] = 0, d[3] = 0
   ```
 
 - **R² = 2^512 mod p** (used for conversion to Montgomery form)
   ```
   0x000000000000000000000000000000000000000000000001000007A2000E90A1
+  d[0] = 0x000007A2000E90A1ULL, d[1] = 0x0000000000000001ULL, d[2] = 0, d[3] = 0
   ```
 
 - **p_inv = -p^(-1) mod 2^64** (used in Montgomery reduction)

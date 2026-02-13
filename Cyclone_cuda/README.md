@@ -6,6 +6,7 @@ High-performance GPU-accelerated Bitcoin puzzle solver using CUDA 12 and SECP256
 
 - ✅ **GPU Acceleration**: Utilizes NVIDIA CUDA 12 for massive parallelization
 - ✅ **Fast Modular Arithmetic**: Optimized secp256k1-specific multiplication using p = 2^256 - 0x1000003D1
+- ✅ **Montgomery Multiplication**: Optional Montgomery arithmetic for modular operations (compile-time selectable)
 - ✅ **High Performance**: 10-100x faster than repeated addition approach
 - ✅ **Multi-GPU Support**: Distribute workload across multiple GPUs
 - ✅ **Independent Threads**: Each GPU thread operates on separate key ranges
@@ -16,7 +17,10 @@ High-performance GPU-accelerated Bitcoin puzzle solver using CUDA 12 and SECP256
 
 ## Performance Optimization
 
-This implementation uses a highly optimized modular multiplication algorithm specifically designed for the secp256k1 prime field. The key optimization is leveraging the special form of the secp256k1 prime:
+This implementation provides two highly optimized modular multiplication algorithms:
+
+### 1. Fast secp256k1-specific Multiplication (Default)
+Leverages the special form of the secp256k1 prime:
 
 ```
 p = 2^256 - 0x1000003D1 = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F
@@ -28,7 +32,18 @@ This special form allows for extremely fast reduction:
 3. Reduce from 320 to 256 bits with one final multiplication
 4. Final conditional subtraction if result >= p
 
-This approach is 10-100x faster than the naive repeated addition method and matches the optimization used in the AVX2/AVX512 CPU implementations.
+This approach is 10-100x faster than naive methods and matches the optimization used in the AVX2/AVX512 CPU implementations.
+
+### 2. Montgomery Multiplication (Optional)
+Montgomery multiplication offers an alternative approach using Montgomery space (aR mod N):
+- Eliminates expensive modular reduction operations
+- Works in "Montgomery space" where R = 2^256
+- Uses CIOS (Coarsely Integrated Operand Scanning) algorithm
+- Can be enabled with `make USE_MONTGOMERY=1`
+
+See [MONTGOMERY_IMPLEMENTATION.md](MONTGOMERY_IMPLEMENTATION.md) for details.
+
+**Note:** The default fast secp256k1 method is recommended as it's typically faster for this specific prime. Montgomery is provided for comparison and may show benefits on certain GPU architectures.
 
 ## Requirements
 
@@ -92,6 +107,24 @@ make CUDA_ARCH=sm_89
 # Or directly with nvcc
 nvcc -O3 -arch=sm_89 -std=c++14 -o Cyclone_cuda Cyclone_cuda.cu -lcuda
 ```
+
+### Montgomery Multiplication Option
+
+To test Montgomery multiplication as an alternative:
+
+```bash
+# Build with Montgomery multiplication
+make USE_MONTGOMERY=1
+
+# Or with specific architecture
+make USE_MONTGOMERY=1 CUDA_ARCH=sm_89
+
+# Build and run test program
+make test
+./test_montgomery_cuda
+```
+
+The default (USE_MONTGOMERY=0) uses the fast secp256k1-specific method which is typically faster. Montgomery is provided for comparison and may show benefits on certain architectures. See [MONTGOMERY_IMPLEMENTATION.md](MONTGOMERY_IMPLEMENTATION.md) for details.
 
 ## Usage
 

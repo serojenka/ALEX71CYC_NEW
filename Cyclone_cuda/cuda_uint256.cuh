@@ -220,11 +220,11 @@ __device__ __forceinline__ void uint256_mod_sqr_secp256k1_fast(uint256_t* result
 // p = 2^256 - 0x1000003D1 for maximum performance
 
 // Montgomery constant: R = 2^256 mod p (precomputed)
-__constant__ uint256_t MONT_R = {{0x1000003D1ULL, 0x0000000000000001ULL, 0, 0}};
+__constant__ uint256_t MONT_R = {{0x00000001000003D1ULL, 0x0000000000000000ULL, 0, 0}};
 
 // R^2 mod p (precomputed for conversion to Montgomery form)
 // R^2 = (2^256)^2 mod p = 2^512 mod p
-__constant__ uint256_t MONT_R2 = {{0x000E90A1ULL, 0x000007A2ULL, 0x0000000000000001ULL, 0}};
+__constant__ uint256_t MONT_R2 = {{0x000007A2000E90A1ULL, 0x0000000000000001ULL, 0, 0}};
 
 // Inverse of p modulo 2^64 (precomputed, used in Montgomery reduction)
 // p_inv = -p^(-1) mod 2^64
