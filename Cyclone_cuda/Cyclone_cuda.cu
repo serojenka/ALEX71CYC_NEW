@@ -429,6 +429,7 @@ int main(int argc, char** argv) {
     cudaError_t launchErr = cudaGetLastError();
     if (launchErr != cudaSuccess) {
         std::cerr << "Kernel launch failed: " << cudaGetErrorString(launchErr) << std::endl;
+        cudaFree(d_target_hash160);
         return 1;
     }
     
@@ -440,6 +441,7 @@ int main(int argc, char** argv) {
         cudaError_t syncErr = cudaDeviceSynchronize();
         if (syncErr != cudaSuccess) {
             std::cerr << "GPU " << gpu << " synchronization error: " << cudaGetErrorString(syncErr) << std::endl;
+            cudaFree(d_target_hash160);
             return 1;
         }
         
