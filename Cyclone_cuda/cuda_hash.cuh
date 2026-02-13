@@ -211,7 +211,6 @@ __device__ void ripemd160(const uint8_t* data, uint32_t len, uint8_t hash[20]) {
     
     uint32_t h[5] = {0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476, 0xC3D2E1F0};
     
-    uint8_t buffer[64];
     uint32_t i = 0;
     
     // Process full blocks
