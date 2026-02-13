@@ -336,9 +336,22 @@ int main(int argc, char** argv) {
     uint256_add_host(&range_size, &range_size, &one);
     
     // Query GPU devices
-    int device_count;
-    cudaGetDeviceCount(&device_count);
+    int device_count = 0;
+    cudaError_t err = cudaGetDeviceCount(&device_count);
+    if (err != cudaSuccess) {
+        std::cerr << "CUDA Error: " << cudaGetErrorString(err) << std::endl;
+        return 1;
+    }
     std::cout << "Found " << device_count << " CUDA device(s)" << std::endl;
+    
+    for (int i = 0; i < device_count; i++) {
+        cudaDeviceProp prop;
+        cudaGetDeviceProperties(&prop, i);
+        std::cout << "  GPU " << i << ": " << prop.name 
+                  << " (Compute " << prop.major << "." << prop.minor 
+                  << ", " << prop.totalGlobalMem / (1024*1024) << " MB)" << std::endl;
+    }
+    std::cout << std::endl;
     
     if (device_count == 0) {
         std::cerr << "Error: No CUDA devices found!\n";
@@ -410,6 +423,12 @@ int main(int argc, char** argv) {
         );
     }
     
+    // Check for kernel launch errors
+    cudaError_t launchErr = cudaGetLastError();
+    if (launchErr != cudaSuccess) {
+        std::cerr << "Kernel launch error: " << cudaGetErrorString(launchErr) << std::endl;
+    }
+    
     // Wait for all GPUs
     for (int gpu = 0; gpu < num_gpus; gpu++) {
         cudaSetDevice(gpu);
@@ -418,6 +437,8 @@ int main(int argc, char** argv) {
     
     auto end_time = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
+    
+    std::cout << "Kernel execution took " << duration << " milliseconds" << std::endl;
     
     // Check for results
     cudaMemcpyFromSymbol(&h_result, d_result, sizeof(SearchResult));
