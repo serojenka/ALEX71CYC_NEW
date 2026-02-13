@@ -28,11 +28,8 @@ __constant__ uint256_t secp256k1_gy = {{0x9C47D08FFB10D4B8ULL, 0xFD17B448A685541
 // Forward declarations
 __device__ void uint256_mod_mul(uint256_t* result, const uint256_t* a, const uint256_t* b, const uint256_t* mod);
 __device__ void uint256_mod_sqr(uint256_t* result, const uint256_t* a, const uint256_t* mod);
-__device__ void uint256_mod_mul_secp256k1_fast(uint256_t* result, const uint256_t* a, const uint256_t* b, const uint256_t* p);
-__device__ void uint256_mod_sqr_secp256k1_fast(uint256_t* result, const uint256_t* a, const uint256_t* p);
 
 // Modular inverse using Fermat's little theorem: a^(-1) = a^(p-2) mod p
-// Uses fast secp256k1 multiplication
 __device__ void uint256_mod_inv(uint256_t* result, const uint256_t* a, const uint256_t* mod) {
     // Calculate p-2
     uint256_t exp, two;
@@ -40,7 +37,7 @@ __device__ void uint256_mod_inv(uint256_t* result, const uint256_t* a, const uin
     uint256_set_u64(&two, 2);
     uint256_sub(&exp, &exp, &two);
     
-    // Binary exponentiation with fast multiplication
+    // Binary exponentiation: result = a^exp mod p
     uint256_t base, temp;
     uint256_set(&base, a);
     uint256_set_u64(result, 1);
@@ -52,21 +49,45 @@ __device__ void uint256_mod_inv(uint256_t* result, const uint256_t* a, const uin
         if (word_idx < 4) {
             uint64_t bit = (exp.d[word_idx] >> bit_idx) & 1;
             if (bit) {
-                uint256_mod_mul_secp256k1_fast(&temp, result, &base, mod);
+                uint256_mod_mul(&temp, result, &base, mod);
                 uint256_set(result, &temp);
             }
         }
         
         if (i < 255) {
-            uint256_mod_sqr_secp256k1_fast(&temp, &base, mod);
+            uint256_mod_mul(&temp, &base, &base, mod);
             uint256_set(&base, &temp);
         }
     }
 }
 
-// Modular multiplication - uses fast secp256k1-optimized version
+// Modular multiplication using repeated addition (simplified but functional)
 __device__ void uint256_mod_mul(uint256_t* result, const uint256_t* a, const uint256_t* b, const uint256_t* mod) {
-    uint256_mod_mul_secp256k1_fast(result, a, b, mod);
+    // Simple but slow - use repeated addition
+    uint256_t acc, temp_a;
+    uint256_set_zero(&acc);
+    uint256_set(&temp_a, a);
+    
+    for (int i = 0; i < 256; i++) {
+        int word_idx = i / 64;
+        int bit_idx = i % 64;
+        
+        if (word_idx < 4) {
+            uint64_t bit = (b->d[word_idx] >> bit_idx) & 1;
+            if (bit) {
+                uint256_mod_add(&acc, &acc, &temp_a, mod);
+            }
+        }
+        
+        if (i < 255) {
+            // Double temp_a
+            uint256_t doubled;
+            uint256_mod_add(&doubled, &temp_a, &temp_a, mod);
+            uint256_set(&temp_a, &doubled);
+        }
+    }
+    
+    uint256_set(result, &acc);
 }
 
 // Modular squaring
