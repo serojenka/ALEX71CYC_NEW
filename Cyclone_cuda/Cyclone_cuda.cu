@@ -24,6 +24,7 @@
 #include "cuda_hash.cuh"
 #include "cuda_utils.h"
 #include "cuda_wif.h"
+#include "cuda_uint256_host.h"
 
 // Configuration
 #define THREADS_PER_BLOCK 256
@@ -330,10 +331,10 @@ int main(int argc, char** argv) {
     uint256_t range_start, range_end, range_size;
     parse_hex_to_uint256(range_start_hex.c_str(), &range_start);
     parse_hex_to_uint256(range_end_hex.c_str(), &range_end);
-    uint256_sub(&range_size, &range_end, &range_start);
+    uint256_sub_host(&range_size, &range_end, &range_start);
     uint256_t one;
-    uint256_set_u64(&one, 1);
-    uint256_add(&range_size, &range_size, &one);
+    uint256_set_u64_host(&one, 1);
+    uint256_add_host(&range_size, &range_size, &one);
     
     // Query GPU devices
     int device_count;
