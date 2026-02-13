@@ -251,10 +251,11 @@ Each of the 262,144 GPU threads:
    - Future: Montgomery multiplication (10-100x faster)
    - Impact: Overall performance ~30-40% of theoretical max
 
-2. **RIPEMD160 Padding**
-   - Simplified for pubkey hashing (33 bytes)
-   - Works correctly for this use case
-   - Not general-purpose for arbitrary lengths
+2. **Hash Functions (SHA256 & RIPEMD160)**
+   - Implements standard padding per RFC 1320 (RIPEMD160) and FIPS 180-4 (SHA256)
+   - Handles arbitrary input lengths correctly
+   - Hash160 pipeline: SHA256(pubkey) [32 bytes] → RIPEMD160 [20 bytes]
+   - Fully compliant with Bitcoin address generation standard
 
 3. **WIF Checksum (without OpenSSL)**
    - Simple XOR checksum as fallback
