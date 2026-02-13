@@ -107,11 +107,8 @@ void uint256_mod_sub(uint256_t* result, const uint256_t* a, const uint256_t* b, 
         uint256_sub(result, a, b);
     } else {
         uint256_t temp;
-        uint256_sub(&temp, m, b);
-        uint256_add(result, a, &temp);
-        if (uint256_cmp(result, m) >= 0) {
-            uint256_sub(result, result, m);
-        }
+        uint256_sub(&temp, a, b);
+        uint256_add(result, &temp, m);
     }
 }
 
