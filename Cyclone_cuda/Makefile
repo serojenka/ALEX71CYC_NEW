@@ -19,8 +19,8 @@ else
     $(info Building with fast secp256k1 multiplication (default))
 endif
 
-# Optional OpenSSL support (for proper WIF generation)
-# Uncomment to enable:
+# Optional OpenSSL support (for proper WIF generation and address checksum verification)
+# Uncomment to enable (OpenSSL is auto-detected by default):
 # USE_OPENSSL = 1
 
 ifdef USE_OPENSSL
