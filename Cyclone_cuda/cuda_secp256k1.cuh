@@ -131,20 +131,14 @@ __device__ void point_double(point_t* result, const point_t* p) {
       Z' = 8*S^3
     */
     
-    uint256_t z2, x2, _3x2, w, s, s2, b, _8b, _8y2s2, y2, h;
-    
-    // z2 = 0 since a=0 for secp256k1
-    uint256_set_zero(&z2);
+    uint256_t x2, _3x2, w, s, s2, b, _8b, _8y2s2, y2, h;
     
     // x2 = X^2
     uint256_mod_sqr(&x2, &p->x, &secp256k1_p);
     
-    // _3x2 = 3*X^2
+    // w = 3*X^2 (since a*Z^2 = 0 for secp256k1)
     uint256_mod_add(&_3x2, &x2, &x2, &secp256k1_p);
-    uint256_mod_add(&_3x2, &_3x2, &x2, &secp256k1_p);
-    
-    // w = z2 + _3x2 = 0 + 3*X^2 = 3*X^2
-    uint256_mod_add(&w, &z2, &_3x2, &secp256k1_p);
+    uint256_mod_add(&w, &_3x2, &x2, &secp256k1_p);
     
     // s = Y * Z
     uint256_mod_mul(&s, &p->y, &p->z, &secp256k1_p);
