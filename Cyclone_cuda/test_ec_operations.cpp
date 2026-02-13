@@ -106,12 +106,12 @@ void uint256_mod_sub(uint256_t* result, const uint256_t* a, const uint256_t* b, 
     if (uint256_cmp(a, b) >= 0) {
         uint256_sub(result, a, b);
     } else {
+        // When a < b, compute (a - b) + m using 2's complement arithmetic
+        // uint256_sub underflows intentionally, producing 2^256 + (a - b)
+        // Adding m then gives the correct result: 2^256 + (a - b) + m ≡ (a - b) + m (mod 2^256)
         uint256_t temp;
-        uint256_sub(&temp, m, b);
-        uint256_add(result, a, &temp);
-        if (uint256_cmp(result, m) >= 0) {
-            uint256_sub(result, result, m);
-        }
+        uint256_sub(&temp, a, b);
+        uint256_add(result, &temp, m);
     }
 }
 
