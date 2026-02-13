@@ -133,8 +133,7 @@ __device__ void point_double(point_t* result, const point_t* p) {
     
     uint256_t z2, x2, _3x2, w, s, s2, b, _8b, _8y2s2, y2, h;
     
-    // z2 = Z^2, then set to 0 since a=0
-    uint256_mod_sqr(&z2, &p->z, &secp256k1_p);
+    // z2 = 0 since a=0 for secp256k1
     uint256_set_zero(&z2);
     
     // x2 = X^2

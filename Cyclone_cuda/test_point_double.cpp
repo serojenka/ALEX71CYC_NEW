@@ -301,7 +301,8 @@ void point_double_current(point_t* result, const point_t* p, const uint256_t* se
     uint256_mod_add(&result->z, &result->z, &result->z, secp256k1_p);
 }
 
-// NEW (correct formula from problem statement) point doubling
+// Test implementation of formula from problem statement (with extra *x term)
+// This was tested but does NOT produce correct results
 void point_double_problem_formula(point_t* result, const point_t* p, const uint256_t* secp256k1_p) {
     if (uint256_is_zero(&p->y)) {
         uint256_set_zero(&result->x);
@@ -330,13 +331,13 @@ void point_double_problem_formula(point_t* result, const point_t* p, const uint2
     uint256_mod_add(&s2, &s, &s, secp256k1_p);
     uint256_mod_sub(&result->x, &result->x, &s2, secp256k1_p);
     
-    // y' = m*(s - x') - 8*y^4*x  ← NOTE THE *x AT THE END!
+    // y' = m*(s - x') - 8*y^4*x (testing formula variant with *x term)
     uint256_t y4;
     uint256_mod_sqr(&y4, &y2, secp256k1_p);
     uint256_mod_add(&t, &y4, &y4, secp256k1_p);
     uint256_mod_add(&t, &t, &t, secp256k1_p);
     uint256_mod_add(&t, &t, &t, secp256k1_p);
-    // Multiply by x
+    // Multiply by x (this variant was tested and doesn't work)
     uint256_mod_mul(&t, &t, &p->x, secp256k1_p);
     
     uint256_mod_sub(&y2, &s, &result->x, secp256k1_p);
@@ -368,12 +369,10 @@ void point_double_fixed(point_t* result, const point_t* p, const uint256_t* secp
     
     uint256_t z2, x2, _3x2, w, s, s2, b, _8b, _8y2s2, y2, h;
     
-    // Line 269: z2 = Z^2
-    uint256_mod_sqr(&z2, &p->z, secp256k1_p);
-    // Line 270: z2 = 0 (since a=0)
+    // z2 = 0 since a=0 for secp256k1
     uint256_set_zero(&z2);
     
-    // Line 271: x2 = X^2
+    // x2 = X^2
     uint256_mod_sqr(&x2, &p->x, secp256k1_p);
     
     // Lines 272-273: _3x2 = 3*X^2
