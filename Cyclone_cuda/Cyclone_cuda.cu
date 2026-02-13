@@ -326,6 +326,13 @@ int main(int argc, char** argv) {
         return 1;
     }
     
+    // Print target hash160 for verification
+    std::cout << "Target Hash160: ";
+    for (int i = 0; i < 20; i++) {
+        std::cout << std::hex << std::setw(2) << std::setfill('0') << (int)target_hash160[i];
+    }
+    std::cout << std::dec << std::endl;
+    
     // Parse range
     uint256_t range_start, range_end, range_size;
     parse_hex_to_uint256(range_start_hex.c_str(), &range_start);
