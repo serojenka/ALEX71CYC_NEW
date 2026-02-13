@@ -63,7 +63,9 @@ Input:  32 bytes (SHA256 hash)
 
 Length encoding (little-endian):
 ```
-0x0001000000000000 = 256 bits in little-endian
+Bit count: 256 (0x100 in hex)
+64-bit little-endian encoding: 0x0001000000000000
+Byte sequence in memory: 00 01 00 00 00 00 00 00
 ```
 
 ## Verification Methods
@@ -132,25 +134,29 @@ P2PKH Address : 128z5d7nN7PkCuX5qoA4Ys6pmxUYnEy86k
 
 ## Implementation Details
 
-### SHA256 (cuda_hash.cuh lines 102-157)
+### SHA256 Implementation
 
 - Follows FIPS 180-4 standard
 - Uses big-endian byte order
 - Length encoded as 64-bit big-endian
 - Processes data in 64-byte (512-bit) blocks
+- Located in `cuda_hash.cuh`, function `sha256()`
 
-### RIPEMD160 (cuda_hash.cuh lines 267-328)
+### RIPEMD160 Implementation
 
 - Follows RFC 1320 standard
 - Uses little-endian byte order
 - Length encoded as 64-bit little-endian
 - Processes data in 64-byte (512-bit) blocks
+- Located in `cuda_hash.cuh`, function `ripemd160()`
 
-### Hash160 (cuda_hash.cuh lines 331-341)
+### Hash160 Implementation
 
 Pipeline:
 1. SHA256(33-byte compressed public key) → 32 bytes
 2. RIPEMD160(32-byte SHA256 output) → 20 bytes (Hash160)
+
+Located in `cuda_hash.cuh`, function `hash160()`
 
 ## Common Issues and Solutions
 
