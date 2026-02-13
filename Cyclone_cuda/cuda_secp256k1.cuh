@@ -8,11 +8,12 @@
 // n = FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141 (order)
 // G = 0479BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798483ADA7726A3C4655DA4FBFC0E1108A8FD17B448A68554199C47D08FFB10D4B8
 
-// Point structure for Jacobian coordinates (X, Y, Z)
+// Point structure for affine coordinates (X, Y, Z)
+// In affine coordinates, Z is always 1 for valid points or 0 for point at infinity
 typedef struct {
     uint256_t x;
     uint256_t y;
-    uint256_t z;
+    uint256_t z;  // Always 1 for valid points, 0 for point at infinity
 } point_t;
 
 // SECP256k1 prime p (field modulus)
@@ -110,9 +111,18 @@ __device__ __forceinline__ void uint256_mod_sqr(uint256_t* result, const uint256
 #endif
 }
 
-// Point doubling in Jacobian coordinates
-// Fixed to use correct Jacobian doubling formula from AVX2 implementation
+// Point doubling in affine coordinates
+// Uses the standard affine doubling formula
 __device__ void point_double(point_t* result, const point_t* p) {
+    // Handle point at infinity
+    if (uint256_is_zero(&p->z)) {
+        uint256_set_zero(&result->x);
+        uint256_set_zero(&result->y);
+        uint256_set_zero(&result->z);
+        return;
+    }
+    
+    // Check if y = 0 (point at infinity case)
     if (uint256_is_zero(&p->y)) {
         uint256_set_zero(&result->x);
         uint256_set_zero(&result->y);
@@ -121,73 +131,60 @@ __device__ void point_double(point_t* result, const point_t* p) {
     }
     
     /*
-      Correct Jacobian doubling formula:
-      W = a * Z^2 + 3 * X^2  (a=0 for secp256k1, so W = 3*X^2)
-      S = Y * Z
-      B = X * Y * S
-      H = W^2 - 8*B
-      X' = 2*H*S
-      Y' = W*(4*B - H) - 8*Y^2*S^2
-      Z' = 8*S^3
+      Affine doubling formula:
+      s = (3 * x^2 + a) * (2 * y)^-1 % p
+      m = 3 * x^2 + a - 2 * y^2 * s^2 % p (not used in standard formula)
+      x' = s^2 - 2 * x % p
+      y' = s * (x - x') - y % p
+      z' = 1
+      
+      For secp256k1, a = 0, so:
+      s = (3 * x^2) * (2 * y)^-1 % p
     */
     
-    uint256_t x2, _3x2, w, s, s2, b, _8b, _8y2s2, y2, h;
+    uint256_t x2, _3x2, _2y, _2y_inv, s, s2, _2x, x_sub_xr, temp;
     
-    // x2 = X^2
+    // x2 = x^2
     uint256_mod_sqr(&x2, &p->x, &secp256k1_p);
     
-    // w = 3*X^2 (since a*Z^2 = 0 for secp256k1)
+    // _3x2 = 3 * x^2 (since a = 0 for secp256k1)
     uint256_mod_add(&_3x2, &x2, &x2, &secp256k1_p);
-    uint256_mod_add(&w, &_3x2, &x2, &secp256k1_p);
+    uint256_mod_add(&_3x2, &_3x2, &x2, &secp256k1_p);
     
-    // s = Y * Z
-    uint256_mod_mul(&s, &p->y, &p->z, &secp256k1_p);
+    // _2y = 2 * y
+    uint256_mod_add(&_2y, &p->y, &p->y, &secp256k1_p);
     
-    // b = X * Y * S
-    uint256_mod_mul(&b, &p->y, &s, &secp256k1_p);
-    uint256_mod_mul(&b, &b, &p->x, &secp256k1_p);
+    // _2y_inv = (2 * y)^-1 mod p
+    uint256_mod_inv(&_2y_inv, &_2y, &secp256k1_p);
     
-    // h = W^2 - 8*B
-    uint256_mod_sqr(&h, &w, &secp256k1_p);
-    uint256_mod_add(&_8b, &b, &b, &secp256k1_p);
-    uint256_mod_add(&_8b, &_8b, &_8b, &secp256k1_p);
-    uint256_mod_add(&_8b, &_8b, &_8b, &secp256k1_p);
-    uint256_mod_sub(&h, &h, &_8b, &secp256k1_p);
+    // s = 3 * x^2 * (2 * y)^-1 mod p
+    uint256_mod_mul(&s, &_3x2, &_2y_inv, &secp256k1_p);
     
-    // r.x = 2*H*S
-    uint256_mod_mul(&result->x, &h, &s, &secp256k1_p);
-    uint256_mod_add(&result->x, &result->x, &result->x, &secp256k1_p);
-    
-    // s2 = S^2
+    // s2 = s^2
     uint256_mod_sqr(&s2, &s, &secp256k1_p);
     
-    // y2 = Y^2
-    uint256_mod_sqr(&y2, &p->y, &secp256k1_p);
+    // _2x = 2 * x
+    uint256_mod_add(&_2x, &p->x, &p->x, &secp256k1_p);
     
-    // _8y2s2 = 8*Y^2*S^2
-    uint256_mod_mul(&_8y2s2, &y2, &s2, &secp256k1_p);
-    uint256_mod_add(&_8y2s2, &_8y2s2, &_8y2s2, &secp256k1_p);
-    uint256_mod_add(&_8y2s2, &_8y2s2, &_8y2s2, &secp256k1_p);
-    uint256_mod_add(&_8y2s2, &_8y2s2, &_8y2s2, &secp256k1_p);
+    // x' = s^2 - 2 * x % p
+    uint256_mod_sub(&result->x, &s2, &_2x, &secp256k1_p);
     
-    // r.y = W*(4*B - H) - 8*Y^2*S^2
-    uint256_t _4b;
-    uint256_mod_add(&_4b, &b, &b, &secp256k1_p);
-    uint256_mod_add(&_4b, &_4b, &_4b, &secp256k1_p);
-    uint256_mod_sub(&result->y, &_4b, &h, &secp256k1_p);
-    uint256_mod_mul(&result->y, &result->y, &w, &secp256k1_p);
-    uint256_mod_sub(&result->y, &result->y, &_8y2s2, &secp256k1_p);
+    // x_sub_xr = x - x'
+    uint256_mod_sub(&x_sub_xr, &p->x, &result->x, &secp256k1_p);
     
-    // r.z = 8*S^3
-    uint256_mod_mul(&result->z, &s2, &s, &secp256k1_p);
-    uint256_mod_add(&result->z, &result->z, &result->z, &secp256k1_p);
-    uint256_mod_add(&result->z, &result->z, &result->z, &secp256k1_p);
-    uint256_mod_add(&result->z, &result->z, &result->z, &secp256k1_p);
+    // temp = s * (x - x')
+    uint256_mod_mul(&temp, &s, &x_sub_xr, &secp256k1_p);
+    
+    // y' = s * (x - x') - y % p
+    uint256_mod_sub(&result->y, &temp, &p->y, &secp256k1_p);
+    
+    // z' = 1 (affine coordinates)
+    uint256_set_u64(&result->z, 1);
 }
 
-// Point addition in Jacobian coordinates
+// Point addition in affine coordinates
 __device__ void point_add(point_t* result, const point_t* p1, const point_t* p2) {
-    // Handle special cases
+    // Handle special cases - point at infinity
     if (uint256_is_zero(&p1->z)) {
         *result = *p2;
         return;
@@ -197,33 +194,31 @@ __device__ void point_add(point_t* result, const point_t* p1, const point_t* p2)
         return;
     }
     
-    uint256_t u1, u2, s1, s2, h, r;
+    /*
+      Affine addition formula:
+      h = x2 - x1 % p
+      r = y2 - y1 % p
+      s = r * h^-1 % p
+      x' = s^2 - x1 - x2 % p
+      y' = s * (x1 - x') - y1 % p
+      z' = 1
+    */
     
-    // u1 = x1*z2^2, u2 = x2*z1^2
-    uint256_t z1_2, z2_2;
-    uint256_mod_sqr(&z1_2, &p1->z, &secp256k1_p);
-    uint256_mod_sqr(&z2_2, &p2->z, &secp256k1_p);
-    uint256_mod_mul(&u1, &p1->x, &z2_2, &secp256k1_p);
-    uint256_mod_mul(&u2, &p2->x, &z1_2, &secp256k1_p);
+    uint256_t h, r, h_inv, s, s2, x1_plus_x2, x1_sub_xr, temp;
     
-    // s1 = y1*z2^3, s2 = y2*z1^3
-    uint256_t z1_3, z2_3;
-    uint256_mod_mul(&z1_3, &z1_2, &p1->z, &secp256k1_p);
-    uint256_mod_mul(&z2_3, &z2_2, &p2->z, &secp256k1_p);
-    uint256_mod_mul(&s1, &p1->y, &z2_3, &secp256k1_p);
-    uint256_mod_mul(&s2, &p2->y, &z1_3, &secp256k1_p);
+    // h = x2 - x1
+    uint256_mod_sub(&h, &p2->x, &p1->x, &secp256k1_p);
     
-    // h = u2 - u1
-    uint256_mod_sub(&h, &u2, &u1, &secp256k1_p);
+    // r = y2 - y1
+    uint256_mod_sub(&r, &p2->y, &p1->y, &secp256k1_p);
     
-    // r = s2 - s1
-    uint256_mod_sub(&r, &s2, &s1, &secp256k1_p);
-    
-    // Check if points are equal
+    // Check if points are equal (h == 0)
     if (uint256_is_zero(&h)) {
         if (uint256_is_zero(&r)) {
+            // Same point, use point doubling
             point_double(result, p1);
         } else {
+            // Points are negatives of each other, result is point at infinity
             uint256_set_zero(&result->x);
             uint256_set_zero(&result->y);
             uint256_set_zero(&result->z);
@@ -231,45 +226,43 @@ __device__ void point_add(point_t* result, const point_t* p1, const point_t* p2)
         return;
     }
     
-    // x3 = r^2 - h^3 - 2*u1*h^2
-    uint256_t h2, h3, u1h2;
-    uint256_mod_sqr(&h2, &h, &secp256k1_p);
-    uint256_mod_mul(&h3, &h2, &h, &secp256k1_p);
-    uint256_mod_mul(&u1h2, &u1, &h2, &secp256k1_p);
+    // h_inv = h^-1 mod p
+    uint256_mod_inv(&h_inv, &h, &secp256k1_p);
     
-    uint256_t r2;
-    uint256_mod_sqr(&r2, &r, &secp256k1_p);
-    uint256_mod_sub(&result->x, &r2, &h3, &secp256k1_p);
-    uint256_t u1h2_2;
-    uint256_mod_add(&u1h2_2, &u1h2, &u1h2, &secp256k1_p);
-    uint256_mod_sub(&result->x, &result->x, &u1h2_2, &secp256k1_p);
+    // s = r * h^-1 mod p
+    uint256_mod_mul(&s, &r, &h_inv, &secp256k1_p);
     
-    // y3 = r*(u1*h^2 - x3) - s1*h^3
-    uint256_t temp;
-    uint256_mod_sub(&temp, &u1h2, &result->x, &secp256k1_p);
-    uint256_mod_mul(&result->y, &r, &temp, &secp256k1_p);
-    uint256_mod_mul(&temp, &s1, &h3, &secp256k1_p);
-    uint256_mod_sub(&result->y, &result->y, &temp, &secp256k1_p);
+    // s2 = s^2
+    uint256_mod_sqr(&s2, &s, &secp256k1_p);
     
-    // z3 = h*z1*z2
-    uint256_mod_mul(&temp, &p1->z, &p2->z, &secp256k1_p);
-    uint256_mod_mul(&result->z, &h, &temp, &secp256k1_p);
+    // x1_plus_x2 = x1 + x2
+    uint256_mod_add(&x1_plus_x2, &p1->x, &p2->x, &secp256k1_p);
+    
+    // x' = s^2 - x1 - x2 % p
+    uint256_mod_sub(&result->x, &s2, &x1_plus_x2, &secp256k1_p);
+    
+    // x1_sub_xr = x1 - x'
+    uint256_mod_sub(&x1_sub_xr, &p1->x, &result->x, &secp256k1_p);
+    
+    // temp = s * (x1 - x')
+    uint256_mod_mul(&temp, &s, &x1_sub_xr, &secp256k1_p);
+    
+    // y' = s * (x1 - x') - y1 % p
+    uint256_mod_sub(&result->y, &temp, &p1->y, &secp256k1_p);
+    
+    // z' = 1 (affine coordinates)
+    uint256_set_u64(&result->z, 1);
 }
 
-// Convert Jacobian to affine coordinates
+// Convert to affine coordinates (no-op since points are already in affine coordinates)
 __device__ void point_to_affine(point_t* p) {
+    // In affine coordinate system, points are already affine (z=1) or at infinity (z=0)
+    // This function is kept for compatibility but does nothing
     if (uint256_is_zero(&p->z)) {
+        // Point at infinity, nothing to do
         return;
     }
-    
-    uint256_t z_inv, z_inv2;
-    uint256_mod_inv(&z_inv, &p->z, &secp256k1_p);
-    uint256_mod_sqr(&z_inv2, &z_inv, &secp256k1_p);
-    
-    uint256_mod_mul(&p->x, &p->x, &z_inv2, &secp256k1_p);
-    uint256_mod_mul(&z_inv2, &z_inv2, &z_inv, &secp256k1_p);
-    uint256_mod_mul(&p->y, &p->y, &z_inv2, &secp256k1_p);
-    uint256_set_u64(&p->z, 1);
+    // Point is already in affine form with z=1, nothing to do
 }
 
 #endif // CUDA_SECP256K1_CUH
