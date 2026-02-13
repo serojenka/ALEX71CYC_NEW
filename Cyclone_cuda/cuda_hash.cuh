@@ -4,6 +4,12 @@
 #include <cuda_runtime.h>
 #include <stdint.h>
 
+// CUDA implementations of SHA256 and RIPEMD160 hash functions
+// Both implementations follow their respective standards:
+// - SHA256: FIPS 180-4 (big-endian byte order, big-endian length encoding)
+// - RIPEMD160: RFC 1320 (little-endian byte order, little-endian length encoding)
+// These are used for Bitcoin address generation (Hash160 = RIPEMD160(SHA256(pubkey)))
+
 // SHA256 implementation for CUDA
 __device__ __forceinline__ uint32_t rotr32(uint32_t x, uint32_t n) {
     return (x >> n) | (x << (32 - n));
@@ -99,6 +105,11 @@ __device__ void sha256_transform(uint32_t state[8], const uint8_t data[64]) {
     state[7] += h;
 }
 
+// SHA256 hash function with standard padding  
+// Implements FIPS 180-4 padding specification:
+// 1. Append 0x80 byte after message
+// 2. Pad with zeros until message length ≡ 448 (mod 512) bits (56 bytes in last block)
+// 3. Append original message length in bits as 64-bit big-endian integer
 __device__ void sha256(const uint8_t* data, uint32_t len, uint8_t hash[32]) {
     uint32_t state[8] = {
         0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
@@ -108,7 +119,7 @@ __device__ void sha256(const uint8_t* data, uint32_t len, uint8_t hash[32]) {
     uint8_t buffer[64];
     uint32_t i = 0;
     
-    // Process full blocks
+    // Process full 64-byte blocks
     while (i + 64 <= len) {
         for (int j = 0; j < 64; j++) {
             buffer[j] = data[i + j];
@@ -117,29 +128,34 @@ __device__ void sha256(const uint8_t* data, uint32_t len, uint8_t hash[32]) {
         i += 64;
     }
     
-    // Handle remaining bytes
+    // Handle remaining bytes and apply standard padding
     uint32_t remaining = len - i;
     for (uint32_t j = 0; j < remaining; j++) {
         buffer[j] = data[i + j];
     }
     
-    // Padding
+    // Step 1: Append mandatory 0x80 byte
     buffer[remaining] = 0x80;
     remaining++;
     
+    // Step 2: Check if length field (8 bytes) fits in current block
     if (remaining > 56) {
+        // Pad current block with zeros and process it
         for (uint32_t j = remaining; j < 64; j++) {
             buffer[j] = 0;
         }
         sha256_transform(state, buffer);
+        // Start fresh block for length field
         remaining = 0;
     }
     
+    // Step 2 (continued): Pad with zeros up to byte 56
     for (uint32_t j = remaining; j < 56; j++) {
         buffer[j] = 0;
     }
     
-    // Append length in bits
+    // Step 3: Append message length in bits as 64-bit big-endian
+    // SHA256 uses big-endian byte order (unlike RIPEMD160 which uses little-endian)
     uint64_t bitlen = (uint64_t)len * 8;
     for (int j = 0; j < 8; j++) {
         buffer[56 + j] = (bitlen >> (56 - j * 8)) & 0xff;
@@ -147,7 +163,7 @@ __device__ void sha256(const uint8_t* data, uint32_t len, uint8_t hash[32]) {
     
     sha256_transform(state, buffer);
     
-    // Produce final hash
+    // Produce final hash (big-endian byte order)
     for (int j = 0; j < 8; j++) {
         hash[j * 4] = (state[j] >> 24) & 0xff;
         hash[j * 4 + 1] = (state[j] >> 16) & 0xff;
@@ -248,45 +264,53 @@ __device__ void ripemd160_transform(uint32_t h[5], const uint8_t* data) {
     h[0] = t;
 }
 
+// RIPEMD160 hash function with standard padding
+// Implements RFC 1320 padding specification:
+// 1. Append 0x80 byte after message
+// 2. Pad with zeros until message length ≡ 448 (mod 512) bits (56 bytes in last block)
+// 3. Append original message length in bits as 64-bit little-endian integer
+// This implementation handles arbitrary input lengths correctly.
 __device__ void ripemd160(const uint8_t* data, uint32_t len, uint8_t hash[20]) {
     uint32_t h[5] = {0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476, 0xC3D2E1F0};
     
     uint8_t buffer[64];
     uint32_t i = 0;
     
-    // Process full blocks
+    // Process full 64-byte blocks
     while (i + 64 <= len) {
         ripemd160_transform(h, data + i);
         i += 64;
     }
     
-    // Handle remaining bytes and padding
+    // Handle remaining bytes and apply standard padding
     uint32_t remaining = len - i;
     for (uint32_t j = 0; j < remaining; j++) {
         buffer[j] = data[i + j];
     }
     
-    // Append 0x80 byte
+    // Step 1: Append mandatory 0x80 byte (10000000 in binary)
     buffer[remaining] = 0x80;
     remaining++;
     
-    // Check if we need an extra block for length
+    // Step 2: Check if length field (8 bytes) fits in current block
+    // If we have more than 56 bytes, we need an additional block
     if (remaining > 56) {
-        // Pad current block with zeros
+        // Pad current block with zeros and process it
         for (uint32_t j = remaining; j < 64; j++) {
             buffer[j] = 0;
         }
-        // Process this block
         ripemd160_transform(h, buffer);
+        // Start fresh block for length field
         remaining = 0;
     }
     
-    // Pad with zeros up to 56 bytes
+    // Step 2 (continued): Pad with zeros up to byte 56
     for (uint32_t j = remaining; j < 56; j++) {
         buffer[j] = 0;
     }
     
-    // Append length in bits (little-endian for RIPEMD160)
+    // Step 3: Append message length in bits as 64-bit little-endian
+    // RIPEMD160 uses little-endian byte order (unlike SHA256 which uses big-endian)
     uint64_t bitlen = (uint64_t)len * 8;
     for (int j = 0; j < 8; j++) {
         buffer[56 + j] = (bitlen >> (j * 8)) & 0xff;
@@ -295,7 +319,7 @@ __device__ void ripemd160(const uint8_t* data, uint32_t len, uint8_t hash[20]) {
     // Process final block
     ripemd160_transform(h, buffer);
     
-    // Produce final hash (little-endian)
+    // Produce final hash (little-endian byte order)
     for (int j = 0; j < 5; j++) {
         hash[j * 4] = h[j] & 0xff;
         hash[j * 4 + 1] = (h[j] >> 8) & 0xff;
@@ -305,10 +329,15 @@ __device__ void ripemd160(const uint8_t* data, uint32_t len, uint8_t hash[20]) {
 }
 
 // Compute Hash160 (SHA256 followed by RIPEMD160)
+// This is the standard Bitcoin address hash function:
+// 1. SHA256 of input (typically 33-byte compressed public key) -> 32 bytes
+// 2. RIPEMD160 of the SHA256 hash -> 20 bytes (Hash160)
+// The RIPEMD160 function receives 32 bytes from SHA256 output and applies
+// standard padding as specified in RFC 1320.
 __device__ void hash160(const uint8_t* pubkey, uint32_t len, uint8_t result[20]) {
     uint8_t sha_hash[32];
     sha256(pubkey, len, sha_hash);
-    ripemd160(sha_hash, 32, result);
+    ripemd160(sha_hash, 32, result);  // RIPEMD160 processes the 32-byte SHA256 output
 }
 
 #endif // CUDA_HASH_CUH

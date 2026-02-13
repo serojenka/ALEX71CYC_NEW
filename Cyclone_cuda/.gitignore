@@ -2,3 +2,5 @@ test_montgomery
 Cyclone_cuda
 *.o
 test_ec_operations
+test_hash_cpu
+test_hash160
