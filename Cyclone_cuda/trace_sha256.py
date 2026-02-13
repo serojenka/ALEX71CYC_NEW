@@ -31,7 +31,7 @@ def trace_logic():
     print(f"\nCheck if remaining ({remaining}) > 56:")
     if remaining > 56:
         print("  YES - Need an extra block")
-        print("  Pad current block with zeros from buffer[{remaining}..63]")
+        print(f"  Pad current block with zeros from buffer[{remaining}..63]")
         print("  Process this block")
         print("  Set remaining = 0")
         remaining = 0

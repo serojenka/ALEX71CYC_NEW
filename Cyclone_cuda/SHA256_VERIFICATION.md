@@ -32,24 +32,22 @@ buffer[33] = 0x80;              // Append 0x80
 
 ### Padding Layout for 33-byte Compressed Public Key
 
-```
-Byte Position | Content                    | Description
---------------|----------------------------|-------------
-0-32          | Public key data           | 33 bytes
-33            | 0x80                      | Padding start marker
-34-55         | 0x00 (22 bytes)           | Zero padding
-56-63         | 0x0000000000000108        | Length (264 bits, big-endian)
-Total: 64 bytes (1 block)
-```
+| Byte Position | Content | Description |
+|---------------|---------|-------------|
+| 0-32 | Public key data | 33 bytes |
+| 33 | 0x80 | Padding start marker |
+| 34-55 | 0x00 (22 bytes) | Zero padding |
+| 56-63 | 0x0000000000000108 | Length (264 bits, big-endian) |
+| Total | - | 64 bytes (1 block) |
 
 ### Expected Results for Test Key 0x6AC3875
 
-| Step       | Input          | Output |
-|------------|----------------|--------|
-| Public Key | Key 0x6AC3875  | `031A864BAE3922F351F1B57CFDD827C25B7E093CB9C88A72C1CD893D9F90F44ECE` |
-| SHA256     | 33-byte pubkey | `8a8904be5cb8e8d9907de7abd33781c42781e43408057dbe62bc5aface9a5875` |
-| RIPEMD160  | 32-byte SHA256 | `0c7aaf6caa7e5424b63d317f0f8f1f9fa40d5560` |
-| Address    | Hash160        | `128z5d7nN7PkCuX5qoA4Ys6pmxUYnEy86k` |
+| Step | Input | Output |
+|------|-------|--------|
+| Public Key | Key 0x6AC3875 | `031A864BAE3922F351F1B57CFDD827C25B7E093CB9C88A72C1CD893D9F90F44ECE` |
+| SHA256 | 33-byte pubkey | `8a8904be5cb8e8d9907de7abd33781c42781e43408057dbe62bc5aface9a5875` |
+| RIPEMD160 | 32-byte SHA256 | `0c7aaf6caa7e5424b63d317f0f8f1f9fa40d5560` |
+| Address | Hash160 | `128z5d7nN7PkCuX5qoA4Ys6pmxUYnEy86k` |
 
 ## Implementation Details
 
