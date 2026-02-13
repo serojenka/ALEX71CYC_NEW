@@ -130,9 +130,9 @@ All Montgomery operations are thread-safe:
 ### Files Delivered
 
 **New Files:**
-1. `Cyclone_cuda/test_montgomery_cuda.cu` - Test program (236 lines)
-2. `Cyclone_cuda/MONTGOMERY_IMPLEMENTATION.md` - Documentation (360 lines)
-3. `Cyclone_cuda/IMPLEMENTATION_COMPLETION.md` - This summary
+1. `Cyclone_cuda/test_montgomery_cuda.cu` - Test program (223 lines)
+2. `Cyclone_cuda/MONTGOMERY_IMPLEMENTATION.md` - Documentation (233 lines)
+3. `Cyclone_cuda/IMPLEMENTATION_COMPLETION.md` - This summary (179 lines)
 
 **Modified Files:**
 1. `Cyclone_cuda/cuda_uint256.cuh` - Added 180 lines of Montgomery code
