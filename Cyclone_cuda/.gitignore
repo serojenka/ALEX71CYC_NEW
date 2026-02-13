@@ -10,3 +10,5 @@ test_checksum
 test_main_output
 test_montgomery_cuda
 test_end_to_end
+test_point_double
+test_modinv

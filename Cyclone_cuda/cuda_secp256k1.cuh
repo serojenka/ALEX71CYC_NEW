@@ -111,6 +111,7 @@ __device__ __forceinline__ void uint256_mod_sqr(uint256_t* result, const uint256
 }
 
 // Point doubling in Jacobian coordinates
+// Fixed to use correct Jacobian doubling formula from AVX2 implementation
 __device__ void point_double(point_t* result, const point_t* p) {
     if (uint256_is_zero(&p->y)) {
         uint256_set_zero(&result->x);
@@ -119,39 +120,68 @@ __device__ void point_double(point_t* result, const point_t* p) {
         return;
     }
     
-    uint256_t s, m, t, y2;
+    /*
+      Correct Jacobian doubling formula:
+      W = a * Z^2 + 3 * X^2  (a=0 for secp256k1, so W = 3*X^2)
+      S = Y * Z
+      B = X * Y * S
+      H = W^2 - 8*B
+      X' = 2*H*S
+      Y' = W*(4*B - H) - 8*Y^2*S^2
+      Z' = 8*S^3
+    */
     
-    // s = 4*x*y^2
+    uint256_t x2, _3x2, w, s, s2, b, _8b, _8y2s2, y2, h;
+    
+    // x2 = X^2
+    uint256_mod_sqr(&x2, &p->x, &secp256k1_p);
+    
+    // w = 3*X^2 (since a*Z^2 = 0 for secp256k1)
+    uint256_mod_add(&_3x2, &x2, &x2, &secp256k1_p);
+    uint256_mod_add(&w, &_3x2, &x2, &secp256k1_p);
+    
+    // s = Y * Z
+    uint256_mod_mul(&s, &p->y, &p->z, &secp256k1_p);
+    
+    // b = X * Y * S
+    uint256_mod_mul(&b, &p->y, &s, &secp256k1_p);
+    uint256_mod_mul(&b, &b, &p->x, &secp256k1_p);
+    
+    // h = W^2 - 8*B
+    uint256_mod_sqr(&h, &w, &secp256k1_p);
+    uint256_mod_add(&_8b, &b, &b, &secp256k1_p);
+    uint256_mod_add(&_8b, &_8b, &_8b, &secp256k1_p);
+    uint256_mod_add(&_8b, &_8b, &_8b, &secp256k1_p);
+    uint256_mod_sub(&h, &h, &_8b, &secp256k1_p);
+    
+    // r.x = 2*H*S
+    uint256_mod_mul(&result->x, &h, &s, &secp256k1_p);
+    uint256_mod_add(&result->x, &result->x, &result->x, &secp256k1_p);
+    
+    // s2 = S^2
+    uint256_mod_sqr(&s2, &s, &secp256k1_p);
+    
+    // y2 = Y^2
     uint256_mod_sqr(&y2, &p->y, &secp256k1_p);
-    uint256_mod_mul(&s, &p->x, &y2, &secp256k1_p);
-    uint256_mod_add(&s, &s, &s, &secp256k1_p);
-    uint256_mod_add(&s, &s, &s, &secp256k1_p);
     
-    // m = 3*x^2 (since a=0 for secp256k1)
-    uint256_mod_sqr(&m, &p->x, &secp256k1_p);
-    uint256_t m3;
-    uint256_mod_add(&m3, &m, &m, &secp256k1_p);
-    uint256_mod_add(&m, &m3, &m, &secp256k1_p);
+    // _8y2s2 = 8*Y^2*S^2
+    uint256_mod_mul(&_8y2s2, &y2, &s2, &secp256k1_p);
+    uint256_mod_add(&_8y2s2, &_8y2s2, &_8y2s2, &secp256k1_p);
+    uint256_mod_add(&_8y2s2, &_8y2s2, &_8y2s2, &secp256k1_p);
+    uint256_mod_add(&_8y2s2, &_8y2s2, &_8y2s2, &secp256k1_p);
     
-    // x' = m^2 - 2*s
-    uint256_mod_sqr(&result->x, &m, &secp256k1_p);
-    uint256_t s2;
-    uint256_mod_add(&s2, &s, &s, &secp256k1_p);
-    uint256_mod_sub(&result->x, &result->x, &s2, &secp256k1_p);
+    // r.y = W*(4*B - H) - 8*Y^2*S^2
+    uint256_t _4b;
+    uint256_mod_add(&_4b, &b, &b, &secp256k1_p);
+    uint256_mod_add(&_4b, &_4b, &_4b, &secp256k1_p);
+    uint256_mod_sub(&result->y, &_4b, &h, &secp256k1_p);
+    uint256_mod_mul(&result->y, &result->y, &w, &secp256k1_p);
+    uint256_mod_sub(&result->y, &result->y, &_8y2s2, &secp256k1_p);
     
-    // y' = m*(s - x') - 8*y^4
-    uint256_t y4;
-    uint256_mod_sqr(&y4, &y2, &secp256k1_p);
-    uint256_mod_add(&t, &y4, &y4, &secp256k1_p);
-    uint256_mod_add(&t, &t, &t, &secp256k1_p);
-    uint256_mod_add(&t, &t, &t, &secp256k1_p);
-    
-    uint256_mod_sub(&y2, &s, &result->x, &secp256k1_p);
-    uint256_mod_mul(&result->y, &m, &y2, &secp256k1_p);
-    uint256_mod_sub(&result->y, &result->y, &t, &secp256k1_p);
-    
-    // z' = 2*y*z
-    uint256_mod_mul(&result->z, &p->y, &p->z, &secp256k1_p);
+    // r.z = 8*S^3
+    uint256_mod_mul(&result->z, &s2, &s, &secp256k1_p);
+    uint256_mod_add(&result->z, &result->z, &result->z, &secp256k1_p);
+    uint256_mod_add(&result->z, &result->z, &result->z, &secp256k1_p);
     uint256_mod_add(&result->z, &result->z, &result->z, &secp256k1_p);
 }
 
