@@ -4,3 +4,8 @@ Cyclone_cuda
 test_ec_operations
 test_hash_cpu
 test_hash160
+test_base58_decode
+test_base58_detailed
+test_checksum
+test_main_output
+test_montgomery_cuda

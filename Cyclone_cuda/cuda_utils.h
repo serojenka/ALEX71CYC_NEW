@@ -4,6 +4,14 @@
 #include <cstring>
 #include <stdint.h>
 
+// Check if OpenSSL is available
+#ifdef __has_include
+  #if __has_include(<openssl/sha.h>)
+    #include <openssl/sha.h>
+    #define HAS_OPENSSL_SHA256
+  #endif
+#endif
+
 // Base58 alphabet for Bitcoin addresses
 static const char* BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 
@@ -77,8 +85,17 @@ static bool decode_address_to_hash160(const char* address, uint8_t hash160[20]) 
         return false;
     }
     
-    // Verify checksum (optional, but recommended)
-    // ... SHA256(SHA256(decoded[0:21])) should match decoded[21:25]
+    // Verify checksum: SHA256(SHA256(decoded[0:21])) should match decoded[21:25]
+    #ifdef HAS_OPENSSL_SHA256
+    uint8_t hash1[32], hash2[32];
+    SHA256(decoded, 21, hash1);
+    SHA256(hash1, 32, hash2);
+    
+    // Check first 4 bytes of double-SHA256 against checksum
+    if (memcmp(hash2, decoded + 21, 4) != 0) {
+        return false; // Invalid checksum
+    }
+    #endif
     
     // Extract hash160 (skip version byte)
     memcpy(hash160, decoded + 1, 20);
