@@ -423,22 +423,34 @@ int main(int argc, char** argv) {
         );
     }
     
-    // Check for kernel launch errors
+    // Check for kernel launch errors immediately
+    std::cout << "Kernels launched on " << num_gpus << " GPU(s), waiting for completion..." << std::endl;
+    
     cudaError_t launchErr = cudaGetLastError();
     if (launchErr != cudaSuccess) {
-        std::cerr << "Kernel launch error: " << cudaGetErrorString(launchErr) << std::endl;
+        std::cerr << "Kernel launch failed: " << cudaGetErrorString(launchErr) << std::endl;
+        return 1;
     }
     
-    // Wait for all GPUs
+    // Wait for all GPUs with error checking
     for (int gpu = 0; gpu < num_gpus; gpu++) {
         cudaSetDevice(gpu);
-        cudaDeviceSynchronize();
+        std::cout << "Waiting for GPU " << gpu << " to finish..." << std::endl;
+        
+        cudaError_t syncErr = cudaDeviceSynchronize();
+        if (syncErr != cudaSuccess) {
+            std::cerr << "GPU " << gpu << " synchronization error: " << cudaGetErrorString(syncErr) << std::endl;
+            return 1;
+        }
+        
+        std::cout << "GPU " << gpu << " completed successfully" << std::endl;
     }
     
     auto end_time = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
     
-    std::cout << "Kernel execution took " << duration << " milliseconds" << std::endl;
+    // Add diagnostic output
+    std::cout << "\nKernel execution time: " << duration << " milliseconds" << std::endl;
     
     // Check for results
     cudaMemcpyFromSymbol(&h_result, d_result, sizeof(SearchResult));
