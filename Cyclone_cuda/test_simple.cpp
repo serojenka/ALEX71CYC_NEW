@@ -23,7 +23,7 @@ void uint256_print(const char* label, const uint256_t* a) {
 
 int main() {
     uint256_t privkey;
-    uint256_set_hex(&privkey, "00000000000000000000000000000000000000000000000000000000006AC3875");
+    uint256_set_hex(&privkey, "0000000000000000000000000000000000000000000000000000000006AC3875");
     printf("Private key should be 0x6AC3875 = decimal 112138357\n");
     uint256_print("Parsed", &privkey);
     printf("d[0] = %llu (decimal), should be 112138357\n", (unsigned long long)privkey.d[0]);

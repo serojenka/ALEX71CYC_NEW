@@ -414,7 +414,7 @@ int main() {
     
     // Test with known private key 0x6AC3875
     uint256_t privkey;
-    uint256_set_hex(&privkey, "000000000000000000000000000000000000000000000000000000006AC3875");
+    uint256_set_hex(&privkey, "0000000000000000000000000000000000000000000000000000000006AC3875");
     
     printf("Private key: 0x6AC3875\n");
     uint256_print("", &privkey);

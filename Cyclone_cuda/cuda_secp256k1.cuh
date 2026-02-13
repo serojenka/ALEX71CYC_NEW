@@ -133,7 +133,6 @@ __device__ void point_double(point_t* result, const point_t* p) {
     /*
       Affine doubling formula:
       s = (3 * x^2 + a) * (2 * y)^-1 % p
-      m = 3 * x^2 + a - 2 * y^2 * s^2 % p (not used in standard formula)
       x' = s^2 - 2 * x % p
       y' = s * (x - x') - y % p
       z' = 1
@@ -254,10 +253,9 @@ __device__ void point_add(point_t* result, const point_t* p1, const point_t* p2)
     uint256_set_u64(&result->z, 1);
 }
 
-// Convert to affine coordinates (no-op since points are already in affine coordinates)
+// No-op function: points are already in affine form (z=1) or at infinity (z=0)
+// This function is kept for API compatibility with code that expects point_to_affine
 __device__ void point_to_affine(point_t* p) {
-    // In affine coordinate system, points are already affine (z=1) or at infinity (z=0)
-    // This function is kept for compatibility but does nothing
     if (uint256_is_zero(&p->z)) {
         // Point at infinity, nothing to do
         return;
