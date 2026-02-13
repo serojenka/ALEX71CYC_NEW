@@ -6,6 +6,18 @@ NVCC = nvcc
 CUDA_ARCH = sm_70
 CUDA_FLAGS = -O3 -arch=$(CUDA_ARCH) -std=c++14
 TARGET = Cyclone_cuda
+TEST_TARGET = test_montgomery_cuda
+
+# Optional Montgomery multiplication (0 = fast secp256k1, 1 = Montgomery)
+# Enable by uncommenting the line below, or use: make USE_MONTGOMERY=1
+# USE_MONTGOMERY = 1
+
+ifdef USE_MONTGOMERY
+    CUDA_FLAGS += -DUSE_MONTGOMERY=$(USE_MONTGOMERY)
+    $(info Building with Montgomery multiplication: $(USE_MONTGOMERY))
+else
+    $(info Building with fast secp256k1 multiplication (default))
+endif
 
 # Optional OpenSSL support (for proper WIF generation)
 # Uncomment to enable:
@@ -38,7 +50,12 @@ endif
 # Default target
 all: $(TARGET)$(TARGET_EXT)
 
-# Build target
+# Test target
+test: $(TEST_TARGET)$(TARGET_EXT)
+	@echo "Test binary built: $(TEST_TARGET)$(TARGET_EXT)"
+	@echo "Run with: ./$(TEST_TARGET)$(TARGET_EXT)"
+
+# Build main target
 $(TARGET)$(TARGET_EXT): $(SOURCES) $(HEADERS)
 	@echo "Building Cyclone CUDA for CUDA 12..."
 ifdef USE_OPENSSL
@@ -47,9 +64,15 @@ endif
 	$(NVCC) $(CUDA_FLAGS) -o $(TARGET)$(TARGET_EXT) $(SOURCES) $(CUDA_LIBS)
 	@echo "Build complete: $(TARGET)$(TARGET_EXT)"
 
+# Build test target
+$(TEST_TARGET)$(TARGET_EXT): test_montgomery_cuda.cu $(HEADERS)
+	@echo "Building Montgomery multiplication test..."
+	$(NVCC) $(CUDA_FLAGS) -o $(TEST_TARGET)$(TARGET_EXT) test_montgomery_cuda.cu $(CUDA_LIBS)
+	@echo "Test build complete: $(TEST_TARGET)$(TARGET_EXT)"
+
 # Clean build artifacts
 clean:
-	$(RM) $(TARGET)$(TARGET_EXT) *.o
+	$(RM) $(TARGET)$(TARGET_EXT) $(TEST_TARGET)$(TARGET_EXT) *.o
 
 # Help target
 help:
@@ -58,8 +81,20 @@ help:
 	@echo ""
 	@echo "Targets:"
 	@echo "  make         - Build Cyclone CUDA"
+	@echo "  make test    - Build Montgomery test program"
 	@echo "  make clean   - Remove build artifacts"
 	@echo "  make help    - Show this help message"
+	@echo ""
+	@echo "Options:"
+	@echo "  USE_MONTGOMERY=1  - Enable Montgomery multiplication (default: 0)"
+	@echo "  USE_OPENSSL=1     - Enable OpenSSL for WIF (default: 0)"
+	@echo "  CUDA_ARCH=sm_XX   - Set target GPU architecture (default: sm_70)"
+	@echo ""
+	@echo "Examples:"
+	@echo "  make                           - Build with fast secp256k1"
+	@echo "  make USE_MONTGOMERY=1          - Build with Montgomery"
+	@echo "  make CUDA_ARCH=sm_89           - Build for RTX 40xx"
+	@echo "  make test                      - Build test program"
 	@echo ""
 	@echo "Requirements:"
 	@echo "  - CUDA 12.x Toolkit"
@@ -84,4 +119,4 @@ help:
 	@echo "To build for a different architecture, use:"
 	@echo "  make CUDA_ARCH=sm_80"
 
-.PHONY: all clean help
+.PHONY: all test clean help

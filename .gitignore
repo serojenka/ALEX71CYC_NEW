@@ -4,6 +4,7 @@
 Cyclone_avx2/Cyclone
 Cyclone_avx512/Cyclone
 Cyclone_cuda/Cyclone_cuda
+Cyclone_cuda/test_montgomery_cuda
 !Cyclone_cuda/
 
 # Object files

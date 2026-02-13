@@ -30,10 +30,25 @@ __device__ void uint256_mod_mul(uint256_t* result, const uint256_t* a, const uin
 __device__ void uint256_mod_sqr(uint256_t* result, const uint256_t* a, const uint256_t* mod);
 __device__ void uint256_mod_mul_secp256k1_fast(uint256_t* result, const uint256_t* a, const uint256_t* b, const uint256_t* p);
 __device__ void uint256_mod_sqr_secp256k1_fast(uint256_t* result, const uint256_t* a, const uint256_t* p);
+__device__ void mont_mul(uint256_t* result, const uint256_t* a, const uint256_t* b);
+__device__ void mont_sqr(uint256_t* result, const uint256_t* a);
+__device__ void to_montgomery(uint256_t* result, const uint256_t* a);
+__device__ void from_montgomery(uint256_t* result, const uint256_t* a);
+__device__ void uint256_mod_inv_mont(uint256_t* result, const uint256_t* a, const uint256_t* mod);
+
+// Configuration: Use Montgomery multiplication (1) or fast secp256k1 (0)
+// For secp256k1, the fast special-form reduction is typically better
+// Montgomery is provided as an alternative for testing and comparison
+#ifndef USE_MONTGOMERY
+#define USE_MONTGOMERY 0  // Default to fast secp256k1 method
+#endif
 
 // Modular inverse using Fermat's little theorem: a^(-1) = a^(p-2) mod p
-// Uses fast secp256k1 multiplication
+// Uses fast secp256k1 multiplication or Montgomery based on configuration
 __device__ void uint256_mod_inv(uint256_t* result, const uint256_t* a, const uint256_t* mod) {
+#if USE_MONTGOMERY
+    uint256_mod_inv_mont(result, a, mod);
+#else
     // Calculate p-2
     uint256_t exp, two;
     uint256_set(&exp, mod);
@@ -62,16 +77,37 @@ __device__ void uint256_mod_inv(uint256_t* result, const uint256_t* a, const uin
             uint256_set(&base, &temp);
         }
     }
+#endif
 }
 
-// Modular multiplication - uses fast secp256k1-optimized version
+// Modular multiplication - uses Montgomery or fast secp256k1-optimized version
 __device__ void uint256_mod_mul(uint256_t* result, const uint256_t* a, const uint256_t* b, const uint256_t* mod) {
+#if USE_MONTGOMERY
+    // Note: This implementation converts to/from Montgomery form for each operation
+    // which adds overhead. For optimal performance in EC operations, point coordinates
+    // should remain in Montgomery form throughout multi-operation sequences.
+    // This per-operation conversion is provided for correctness and simplicity.
+    // Future optimization: Keep EC point coordinates in Montgomery space.
+    uint256_t a_mont, b_mont, result_mont;
+    to_montgomery(&a_mont, a);
+    to_montgomery(&b_mont, b);
+    mont_mul(&result_mont, &a_mont, &b_mont);
+    from_montgomery(result, &result_mont);
+#else
     uint256_mod_mul_secp256k1_fast(result, a, b, mod);
+#endif
 }
 
 // Modular squaring
 __device__ __forceinline__ void uint256_mod_sqr(uint256_t* result, const uint256_t* a, const uint256_t* mod) {
+#if USE_MONTGOMERY
+    uint256_t a_mont, result_mont;
+    to_montgomery(&a_mont, a);
+    mont_sqr(&result_mont, &a_mont);
+    from_montgomery(result, &result_mont);
+#else
     uint256_mod_mul(result, a, a, mod);
+#endif
 }
 
 // Point doubling in Jacobian coordinates
