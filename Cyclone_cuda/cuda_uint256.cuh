@@ -265,7 +265,11 @@ __device__ void mont_reduce(uint256_t* result, const uint64_t* t) {
             uint64_t sum = c[i+j] + lo + carry;
             carry = hi;
             
-            // Handle carries
+            // Handle carries properly
+            // Two separate checks needed because:
+            // 1. sum < c[i+j]: overflow from adding lo + previous carry
+            // 2. sum < lo: overflow from adding carry to result
+            // Both can contribute to the final carry independently
             if (sum < c[i+j]) carry++;
             if (sum < lo) carry++;
             

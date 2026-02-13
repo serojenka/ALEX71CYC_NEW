@@ -19,6 +19,14 @@ void print_uint256(const char* label, const uint256_t* a) {
            (unsigned long long)a->d[0]);
 }
 
+// Helper to compare uint256 for equality
+bool uint256_equal(const uint256_t* a, const uint256_t* b) {
+    return (a->d[0] == b->d[0] && 
+            a->d[1] == b->d[1] && 
+            a->d[2] == b->d[2] && 
+            a->d[3] == b->d[3]);
+}
+
 // Test kernel
 __global__ void test_multiplication_kernel(uint256_t* results, int* status) {
     if (threadIdx.x == 0 && blockIdx.x == 0) {
@@ -152,29 +160,17 @@ int main() {
     printf("\nTest 1: 2 * 3 mod p\n");
     print_uint256("  Fast result ", &h_results[0]);
     print_uint256("  Mont result ", &h_results[1]);
-    printf("  Match: %s\n\n", 
-           (h_results[0].d[0] == h_results[1].d[0] &&
-            h_results[0].d[1] == h_results[1].d[1] &&
-            h_results[0].d[2] == h_results[1].d[2] &&
-            h_results[0].d[3] == h_results[1].d[3]) ? "YES" : "NO");
+    printf("  Match: %s\n\n", uint256_equal(&h_results[0], &h_results[1]) ? "YES" : "NO");
     
     printf("Test 2: 12345^2 mod p\n");
     print_uint256("  Fast result ", &h_results[2]);
     print_uint256("  Mont result ", &h_results[3]);
-    printf("  Match: %s\n\n",
-           (h_results[2].d[0] == h_results[3].d[0] &&
-            h_results[2].d[1] == h_results[3].d[1] &&
-            h_results[2].d[2] == h_results[3].d[2] &&
-            h_results[2].d[3] == h_results[3].d[3]) ? "YES" : "NO");
+    printf("  Match: %s\n\n", uint256_equal(&h_results[2], &h_results[3]) ? "YES" : "NO");
     
     printf("Test 3: G_x * 2 mod p\n");
     print_uint256("  Fast result ", &h_results[4]);
     print_uint256("  Mont result ", &h_results[5]);
-    printf("  Match: %s\n\n",
-           (h_results[4].d[0] == h_results[5].d[0] &&
-            h_results[4].d[1] == h_results[5].d[1] &&
-            h_results[4].d[2] == h_results[5].d[2] &&
-            h_results[4].d[3] == h_results[5].d[3]) ? "YES" : "NO");
+    printf("  Match: %s\n\n", uint256_equal(&h_results[4], &h_results[5]) ? "YES" : "NO");
     
     // Run EC operation tests
     printf("Running elliptic curve operation tests...\n");

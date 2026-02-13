@@ -83,8 +83,11 @@ __device__ void uint256_mod_inv(uint256_t* result, const uint256_t* a, const uin
 // Modular multiplication - uses Montgomery or fast secp256k1-optimized version
 __device__ void uint256_mod_mul(uint256_t* result, const uint256_t* a, const uint256_t* b, const uint256_t* mod) {
 #if USE_MONTGOMERY
-    // For Montgomery, we need to handle conversion
-    // If inputs are in normal form, convert, multiply, and convert back
+    // Note: This implementation converts to/from Montgomery form for each operation
+    // which adds overhead. For optimal performance in EC operations, point coordinates
+    // should remain in Montgomery form throughout multi-operation sequences.
+    // This per-operation conversion is provided for correctness and simplicity.
+    // Future optimization: Keep EC point coordinates in Montgomery space.
     uint256_t a_mont, b_mont, result_mont;
     to_montgomery(&a_mont, a);
     to_montgomery(&b_mont, b);

@@ -9,7 +9,7 @@ TARGET = Cyclone_cuda
 TEST_TARGET = test_montgomery_cuda
 
 # Optional Montgomery multiplication (0 = fast secp256k1, 1 = Montgomery)
-# Uncomment to enable Montgomery (default is fast secp256k1):
+# Enable by uncommenting the line below, or use: make USE_MONTGOMERY=1
 # USE_MONTGOMERY = 1
 
 ifdef USE_MONTGOMERY
