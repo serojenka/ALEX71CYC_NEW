@@ -12,3 +12,5 @@ test_montgomery_cuda
 test_end_to_end
 test_point_double
 test_modinv
+test_mod_inverse_cpu
+test_mod_inverse_verify
