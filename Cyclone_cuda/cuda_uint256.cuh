@@ -404,4 +404,136 @@ __device__ void uint256_mod_inv_mont(uint256_t* result, const uint256_t* a, cons
     uint256_set(result, &temp);
 }
 
+// ============================================================================
+// Bit manipulation functions
+// ============================================================================
+
+// Get bit at position (0 is LSB)
+__device__ __forceinline__ uint64_t uint256_get_bit(const uint256_t* a, int pos) {
+    if (pos < 0 || pos >= 256) return 0;
+    int word_idx = pos / 64;
+    int bit_idx = pos % 64;
+    return (a->d[word_idx] >> bit_idx) & 1;
+}
+
+// Right shift by n bits
+__device__ __forceinline__ void uint256_rshift(uint256_t* result, const uint256_t* a, int n) {
+    if (n >= 256) {
+        uint256_set_zero(result);
+        return;
+    }
+    if (n == 0) {
+        uint256_set(result, a);
+        return;
+    }
+    
+    int word_shift = n / 64;
+    int bit_shift = n % 64;
+    
+    if (bit_shift == 0) {
+        // Word-aligned shift
+        for (int i = 0; i < 4 - word_shift; i++) {
+            result->d[i] = a->d[i + word_shift];
+        }
+        for (int i = 4 - word_shift; i < 4; i++) {
+            result->d[i] = 0;
+        }
+    } else {
+        // Non-aligned shift
+        for (int i = 0; i < 4 - word_shift - 1; i++) {
+            result->d[i] = (a->d[i + word_shift] >> bit_shift) | 
+                           (a->d[i + word_shift + 1] << (64 - bit_shift));
+        }
+        if (4 - word_shift - 1 >= 0 && 4 - word_shift - 1 < 4) {
+            result->d[4 - word_shift - 1] = a->d[3] >> bit_shift;
+        }
+        for (int i = 4 - word_shift; i < 4; i++) {
+            result->d[i] = 0;
+        }
+    }
+}
+
+// ============================================================================
+// Extended Euclidean Algorithm for Modular Inverse
+// ============================================================================
+
+// Add with carry tracking - returns carry out
+__device__ __forceinline__ uint64_t uint256_add_with_carry_out(uint256_t* result, const uint256_t* a, const uint256_t* b) {
+    uint64_t carry = 0;
+    carry = add_with_carry(&result->d[0], a->d[0], b->d[0], carry);
+    carry = add_with_carry(&result->d[1], a->d[1], b->d[1], carry);
+    carry = add_with_carry(&result->d[2], a->d[2], b->d[2], carry);
+    carry = add_with_carry(&result->d[3], a->d[3], b->d[3], carry);
+    return carry;
+}
+
+// Right shift by 1 with carry in (for 257-bit values stored as 256-bit + carry)
+__device__ __forceinline__ void uint256_rshift1_with_carry(uint256_t* result, const uint256_t* a, uint64_t carry_in) {
+    result->d[0] = (a->d[0] >> 1) | (a->d[1] << 63);
+    result->d[1] = (a->d[1] >> 1) | (a->d[2] << 63);
+    result->d[2] = (a->d[2] >> 1) | (a->d[3] << 63);
+    result->d[3] = (a->d[3] >> 1) | (carry_in << 63);
+}
+
+// Modular inverse using binary extended Euclidean algorithm
+// This corrected implementation prevents infinite loops in elliptic curve operations
+__device__ void uint256_mod_inverse(uint256_t* r, const uint256_t* a, const uint256_t* mod) {
+    uint256_t u = *a;
+    uint256_t v = *mod;
+    uint256_t x1, x2;
+    uint256_set_u64(&x1, 1);   // x1 starts as 1
+    uint256_set_zero(&x2);     // x2 starts as 0
+    
+    // Track carry bits for 257-bit arithmetic
+    uint64_t x1_carry = 0;
+    uint64_t x2_carry = 0;
+    
+    while (!uint256_is_zero(&u) && !uint256_is_zero(&v)) {
+        while (uint256_get_bit(&u, 0) == 0) {
+            uint256_rshift(&u, &u, 1);
+            if (uint256_get_bit(&x1, 0)) {
+                // x1 is odd, add mod to make it even before dividing by 2
+                x1_carry += uint256_add_with_carry_out(&x1, &x1, mod);
+            }
+            // Divide by 2 with carry
+            uint256_rshift1_with_carry(&x1, &x1, x1_carry);
+            x1_carry = 0;  // After division, no carry remains
+        }
+        while (uint256_get_bit(&v, 0) == 0) {
+            uint256_rshift(&v, &v, 1);
+            if (uint256_get_bit(&x2, 0)) {
+                // x2 is odd, add mod to make it even before dividing by 2
+                x2_carry += uint256_add_with_carry_out(&x2, &x2, mod);
+            }
+            // Divide by 2 with carry
+            uint256_rshift1_with_carry(&x2, &x2, x2_carry);
+            x2_carry = 0;  // After division, no carry remains
+        }
+        if (uint256_cmp(&u, &v) >= 0) {
+            uint256_mod_sub(&u, &u, &v, mod);
+            uint256_mod_sub(&x1, &x1, &x2, mod);
+            x1_carry = 0;
+        } else {
+            uint256_mod_sub(&v, &v, &u, mod);
+            uint256_mod_sub(&x2, &x2, &x1, mod);
+            x2_carry = 0;
+        }
+    }
+    
+    // Final result with modular reduction
+    if (uint256_is_zero(&u)) {
+        // Ensure result is in range [0, mod)
+        while (uint256_cmp(&x2, mod) >= 0) {
+            uint256_sub(&x2, &x2, mod);
+        }
+        *r = x2;
+    } else {
+        // Ensure result is in range [0, mod)
+        while (uint256_cmp(&x1, mod) >= 0) {
+            uint256_sub(&x1, &x1, mod);
+        }
+        *r = x1;
+    }
+}
+
 #endif // CUDA_UINT256_CUH
