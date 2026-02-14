@@ -83,6 +83,52 @@ __device__ __forceinline__ bool uint256_is_zero(const uint256_t* a) {
     return (a->d[0] == 0 && a->d[1] == 0 && a->d[2] == 0 && a->d[3] == 0);
 }
 
+// Get bit at position pos (0 = LSB)
+__device__ __forceinline__ int uint256_get_bit(const uint256_t* a, int pos) {
+    if (pos < 0 || pos >= 256) return 0;
+    int word_idx = pos / 64;
+    int bit_idx = pos % 64;
+    return (a->d[word_idx] >> bit_idx) & 1;
+}
+
+// Right shift by n bits
+__device__ __forceinline__ void uint256_rshift(uint256_t* result, const uint256_t* a, int n) {
+    if (n == 0) {
+        *result = *a;
+        return;
+    }
+    if (n >= 256) {
+        uint256_set_zero(result);
+        return;
+    }
+    
+    int word_shift = n / 64;
+    int bit_shift = n % 64;
+    
+    if (bit_shift == 0) {
+        // Simple word shift
+        for (int i = 0; i < 4; i++) {
+            if (i + word_shift < 4) {
+                result->d[i] = a->d[i + word_shift];
+            } else {
+                result->d[i] = 0;
+            }
+        }
+    } else {
+        // Shift with bit alignment
+        for (int i = 0; i < 4; i++) {
+            if (i + word_shift < 4) {
+                result->d[i] = a->d[i + word_shift] >> bit_shift;
+                if (i + word_shift + 1 < 4) {
+                    result->d[i] |= a->d[i + word_shift + 1] << (64 - bit_shift);
+                }
+            } else {
+                result->d[i] = 0;
+            }
+        }
+    }
+}
+
 // Modular addition (a + b) mod m
 __device__ __forceinline__ void uint256_mod_add(uint256_t* result, const uint256_t* a, const uint256_t* b, const uint256_t* m) {
     uint256_add(result, a, b);
@@ -102,6 +148,45 @@ __device__ __forceinline__ void uint256_mod_sub(uint256_t* result, const uint256
         uint256_t temp;
         uint256_sub(&temp, a, b);
         uint256_add(result, &temp, m);
+    }
+}
+
+// Modular inverse using extended Euclidean algorithm with binary GCD
+// Computes r = a^(-1) mod m
+__device__ void uint256_mod_inverse(uint256_t* r, const uint256_t* a, const uint256_t* mod) {
+    uint256_t u = *a;
+    uint256_t v = *mod;
+    uint256_t x1 = {{0, 0, 0, 0}};
+    uint256_t x2 = {{1, 0, 0, 0}};
+    
+    while (!uint256_is_zero(&u) && !uint256_is_zero(&v)) {
+        while (uint256_get_bit(&u, 0) == 0) {
+            uint256_rshift(&u, &u, 1);
+            if (uint256_get_bit(&x1, 0)) {
+                uint256_mod_add(&x1, &x1, mod, mod);
+            }
+            uint256_rshift(&x1, &x1, 1);
+        }
+        while (uint256_get_bit(&v, 0) == 0) {
+            uint256_rshift(&v, &v, 1);
+            if (uint256_get_bit(&x2, 0)) {
+                uint256_mod_add(&x2, &x2, mod, mod);
+            }
+            uint256_rshift(&x2, &x2, 1);
+        }
+        if (uint256_cmp(&u, &v) >= 0) {
+            uint256_mod_sub(&u, &u, &v, mod);
+            uint256_mod_sub(&x1, &x1, &x2, mod);
+        } else {
+            uint256_mod_sub(&v, &v, &u, mod);
+            uint256_mod_sub(&x2, &x2, &x1, mod);
+        }
+    }
+    if (uint256_is_zero(&u)) {
+        *r = x2;
+    } else {
+        // No inverse
+        uint256_set_zero(r);
     }
 }
 
