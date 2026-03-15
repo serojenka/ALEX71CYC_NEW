@@ -413,7 +413,8 @@ __global__ void batch_search_kernel(
     } // batch loop
 
     // Accumulate checked count
-    atomicAdd(out_checked, local_checked);
+    atomicAdd(reinterpret_cast<unsigned long long*>(out_checked),
+              static_cast<unsigned long long>(local_checked));
 }
 
 // ============================================================

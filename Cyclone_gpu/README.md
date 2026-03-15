@@ -63,6 +63,32 @@ make CUDA_ARCH=sm_89
 make CUDA_ARCH=sm_86 BATCHES_PER_BLOCK=16
 ```
 
+### Windows x64 Build
+
+Requirements:
+- CUDA Toolkit 11.x or 12.x
+- Visual Studio 2019/2022 (Desktop development with C++)
+- x64 Native Tools Command Prompt (or Developer Command Prompt)
+
+From the `Cyclone_gpu` directory:
+
+```batch
+build_windows.bat
+```
+
+Optional parameters:
+
+```batch
+build_windows.bat sm_89 16
+```
+
+This builds `Cyclone_gpu.exe` in the same directory.
+
+Architecture examples:
+- `sm_75` for RTX 20xx / GTX 16xx
+- `sm_86` for RTX 30xx
+- `sm_89` for RTX 40xx
+
 ## Usage
 
 ```
