@@ -113,13 +113,28 @@ __device__ __forceinline__ void u256_add_device(uint256_t *r,
                                                   const uint256_t *a,
                                                   const uint256_t *b)
 {
-    typedef unsigned __int128 u128;
     uint64_t carry = 0;
-    u128 acc;
-    acc = (u128)a->d[0] + b->d[0]; r->d[0] = (uint64_t)acc; carry = (uint64_t)(acc>>64);
-    acc = (u128)a->d[1] + b->d[1] + carry; r->d[1] = (uint64_t)acc; carry = (uint64_t)(acc>>64);
-    acc = (u128)a->d[2] + b->d[2] + carry; r->d[2] = (uint64_t)acc; carry = (uint64_t)(acc>>64);
-    acc = (u128)a->d[3] + b->d[3] + carry; r->d[3] = (uint64_t)acc;
+    uint64_t t, c2;
+
+    t = a->d[0] + b->d[0];
+    carry = (t < a->d[0]) ? 1ULL : 0ULL;
+    r->d[0] = t;
+
+    t = a->d[1] + b->d[1];
+    c2 = (t < a->d[1]) ? 1ULL : 0ULL;
+    t += carry;
+    carry = c2 + ((t < carry) ? 1ULL : 0ULL);
+    r->d[1] = t;
+
+    t = a->d[2] + b->d[2];
+    c2 = (t < a->d[2]) ? 1ULL : 0ULL;
+    t += carry;
+    carry = c2 + ((t < carry) ? 1ULL : 0ULL);
+    r->d[2] = t;
+
+    t = a->d[3] + b->d[3];
+    t += carry;
+    r->d[3] = t;
 }
 
 // Compare r = a >= b
@@ -182,11 +197,12 @@ __global__ void batch_search_kernel(
     // Compute this block's starting private key:
     //   block_start = range_start + blockIdx.x * block_keys
     if (tid == 0) {
-        typedef unsigned __int128 u128;
-        u128 prod = (u128)(uint64_t)blockIdx.x * (u128)block_keys;
+        uint64_t block_idx64 = (uint64_t)blockIdx.x;
+        uint64_t prod_lo = block_idx64 * block_keys;
+        uint64_t prod_hi = __umul64hi(block_idx64, block_keys);
         uint256_t offset;
-        offset.d[0] = (uint64_t)prod;
-        offset.d[1] = (uint64_t)(prod >> 64);
+        offset.d[0] = prod_lo;
+        offset.d[1] = prod_hi;
         offset.d[2] = 0; offset.d[3] = 0;
 
         u256_add_device(&sh_priv, &range_start, &offset);
@@ -456,11 +472,18 @@ static void hexToU256(const std::string &hex, uint256_t *out) {
 
 // Simple host-side uint256 add for advancing range
 static void h_u256_add_u64(uint256_t *r, const uint256_t *a, uint64_t b) {
-    typedef unsigned __int128 u128;
-    u128 acc = (u128)a->d[0] + b;
-    r->d[0] = (uint64_t)acc; uint64_t c = (uint64_t)(acc>>64);
-    acc = (u128)a->d[1] + c; r->d[1]=(uint64_t)acc; c=(uint64_t)(acc>>64);
-    acc = (u128)a->d[2] + c; r->d[2]=(uint64_t)acc; c=(uint64_t)(acc>>64);
+    uint64_t s = a->d[0] + b;
+    uint64_t c = (s < a->d[0]) ? 1ULL : 0ULL;
+    r->d[0] = s;
+
+    s = a->d[1] + c;
+    c = (s < a->d[1]) ? 1ULL : 0ULL;
+    r->d[1] = s;
+
+    s = a->d[2] + c;
+    c = (s < a->d[2]) ? 1ULL : 0ULL;
+    r->d[2] = s;
+
     r->d[3] = a->d[3] + c;
 }
 

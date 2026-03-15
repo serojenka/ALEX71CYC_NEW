@@ -4,6 +4,10 @@
 #include <cuda_runtime.h>
 #include <stdint.h>
 
+#if defined(_MSC_VER)
+#include <intrin.h>
+#endif
+
 // 256-bit unsigned integer for GPU (4 × 64-bit words, little-endian)
 typedef struct {
     uint64_t d[4];
@@ -141,21 +145,37 @@ __device__ __forceinline__ void fe_neg(uint256_t *r, const uint256_t *a) {
 // Uses p = 2^256 - beta for fast reduction (512 → 256 bits)
 // ============================================================
 
-// fe_mul using unsigned __int128 partial products
+__device__ __forceinline__ uint64_t d_mul_hi_u64(uint64_t a, uint64_t b) {
+    return __umul64hi(a, b);
+}
+
+__device__ __forceinline__ void d_muladd_u64(uint64_t a, uint64_t b,
+                                              uint64_t add, uint64_t carry_in,
+                                              uint64_t *lo, uint64_t *carry_out)
+{
+    uint64_t p_lo = a * b;
+    uint64_t p_hi = d_mul_hi_u64(a, b);
+
+    uint64_t s = p_lo + add;
+    uint64_t c = (s < p_lo) ? 1ULL : 0ULL;
+
+    uint64_t s2 = s + carry_in;
+    c += (s2 < s) ? 1ULL : 0ULL;
+
+    *lo = s2;
+    *carry_out = p_hi + c;
+}
+
 __device__ void fe_mul(uint256_t *r,
                         const uint256_t *a,
                         const uint256_t *b)
 {
-    // 256×256 → 512-bit schoolbook multiply using unsigned __int128
-    typedef unsigned __int128 u128;
     uint64_t t[8] = {0,0,0,0,0,0,0,0};
 
     for (int i = 0; i < 4; i++) {
         uint64_t carry = 0;
         for (int j = 0; j < 4; j++) {
-            u128 acc = (u128)a->d[i] * b->d[j] + t[i+j] + carry;
-            t[i+j] = (uint64_t)acc;
-            carry   = (uint64_t)(acc >> 64);
+            d_muladd_u64(a->d[i], b->d[j], t[i+j], carry, &t[i+j], &carry);
         }
         t[i+4] += carry; // t[i+4] starts at 0 for i=0..3, so no overflow
     }
@@ -164,20 +184,30 @@ __device__ void fe_mul(uint256_t *r,
     // beta = 0x1000003D1, p = 2^256 - beta
     uint64_t carry2 = 0;
     for (int i = 0; i < 4; i++) {
-        u128 acc = (u128)t[i+4] * GPU_K1_BETA + t[i] + carry2;
-        t[i]   = (uint64_t)acc;
-        carry2 = (uint64_t)(acc >> 64);
+        d_muladd_u64(t[i+4], GPU_K1_BETA, t[i], carry2, &t[i], &carry2);
     }
 
     // Second reduction: remaining overflow × beta
-    u128 acc2 = (u128)carry2 * GPU_K1_BETA;
+    uint64_t acc2_lo = carry2 * GPU_K1_BETA;
+    uint64_t acc2_hi = d_mul_hi_u64(carry2, GPU_K1_BETA);
+
     uint64_t carry3 = 0;
-    u128 a0 = (u128)t[0] + (uint64_t)acc2;
-    t[0] = (uint64_t)a0; carry3 = (uint64_t)(a0 >> 64);
-    u128 a1 = (u128)t[1] + (uint64_t)(acc2 >> 64) + carry3;
-    t[1] = (uint64_t)a1; carry3 = (uint64_t)(a1 >> 64);
-    u128 a2 = (u128)t[2] + carry3;
-    t[2] = (uint64_t)a2; carry3 = (uint64_t)(a2 >> 64);
+
+    uint64_t s0 = t[0] + acc2_lo;
+    carry3 = (s0 < t[0]) ? 1ULL : 0ULL;
+    t[0] = s0;
+
+    uint64_t s1 = t[1] + acc2_hi;
+    uint64_t c1 = (s1 < t[1]) ? 1ULL : 0ULL;
+    uint64_t s1b = s1 + carry3;
+    c1 += (s1b < s1) ? 1ULL : 0ULL;
+    t[1] = s1b;
+    carry3 = c1;
+
+    uint64_t s2 = t[2] + carry3;
+    carry3 = (s2 < t[2]) ? 1ULL : 0ULL;
+    t[2] = s2;
+
     t[3] += carry3;
 
     r->d[0]=t[0]; r->d[1]=t[1]; r->d[2]=t[2]; r->d[3]=t[3];
@@ -255,27 +285,55 @@ static inline uint64_t h_u256_add(uint256_t *r,
                                     const uint256_t *a,
                                     const uint256_t *b)
 {
-    typedef unsigned __int128 u128;
-    u128 acc;
-    uint64_t carry = 0;
-    for (int i = 0; i < 4; i++) {
-        acc = (u128)a->d[i] + b->d[i] + carry;
-        r->d[i] = (uint64_t)acc;
-        carry   = (uint64_t)(acc >> 64);
-    }
+    uint64_t carry = 0, t, c2;
+    t = a->d[0] + b->d[0]; carry = (t < a->d[0]) ? 1ULL : 0ULL; r->d[0] = t;
+    t = a->d[1] + b->d[1]; c2    = (t < a->d[1]) ? 1ULL : 0ULL;
+    t += carry; carry = c2 + ((t < carry) ? 1ULL : 0ULL); r->d[1] = t;
+    t = a->d[2] + b->d[2]; c2    = (t < a->d[2]) ? 1ULL : 0ULL;
+    t += carry; carry = c2 + ((t < carry) ? 1ULL : 0ULL); r->d[2] = t;
+    t = a->d[3] + b->d[3]; c2    = (t < a->d[3]) ? 1ULL : 0ULL;
+    t += carry; carry = c2 + ((t < carry) ? 1ULL : 0ULL); r->d[3] = t;
     return carry;
 }
 static inline void h_u256_sub(uint256_t *r,
                                 const uint256_t *a,
                                 const uint256_t *b)
 {
-    typedef unsigned __int128 u128;
     uint64_t borrow = 0;
     for (int i = 0; i < 4; i++) {
-        u128 t = (u128)a->d[i] - b->d[i] - borrow;
-        r->d[i] = (uint64_t)t;
-        borrow  = (t >> 127) & 1ULL;
+        uint64_t ai = a->d[i], bi = b->d[i];
+        uint64_t t1 = ai - bi;
+        uint64_t b1 = (ai < bi) ? 1ULL : 0ULL;
+        uint64_t t2 = t1 - borrow;
+        uint64_t b2 = (t1 < borrow) ? 1ULL : 0ULL;
+        r->d[i] = t2;
+        borrow = b1 + b2;
     }
+}
+
+static inline uint64_t h_mul_hi_u64(uint64_t a, uint64_t b) {
+#if defined(_MSC_VER)
+    return __umulh(a, b);
+#else
+    return (uint64_t)(((unsigned __int128)a * (unsigned __int128)b) >> 64);
+#endif
+}
+
+static inline void h_muladd_u64(uint64_t a, uint64_t b,
+                                uint64_t add, uint64_t carry_in,
+                                uint64_t *lo, uint64_t *carry_out)
+{
+    uint64_t p_lo = a * b;
+    uint64_t p_hi = h_mul_hi_u64(a, b);
+
+    uint64_t s = p_lo + add;
+    uint64_t c = (s < p_lo) ? 1ULL : 0ULL;
+
+    uint64_t s2 = s + carry_in;
+    c += (s2 < s) ? 1ULL : 0ULL;
+
+    *lo = s2;
+    *carry_out = p_hi + c;
 }
 
 static const uint256_t H_P = {{
@@ -304,14 +362,11 @@ static inline void h_fe_sub(uint256_t *r,
 static inline void h_fe_mul(uint256_t *r,
                               const uint256_t *a, const uint256_t *b)
 {
-    typedef unsigned __int128 u128;
     uint64_t t[8] = {};
     for (int i = 0; i < 4; i++) {
         uint64_t carry = 0;
         for (int j = 0; j < 4; j++) {
-            u128 acc = (u128)a->d[i] * b->d[j] + t[i+j] + carry;
-            t[i+j]   = (uint64_t)acc;
-            carry     = (uint64_t)(acc >> 64);
+            h_muladd_u64(a->d[i], b->d[j], t[i+j], carry, &t[i+j], &carry);
         }
         t[i+4] += carry;
     }
@@ -319,25 +374,42 @@ static inline void h_fe_mul(uint256_t *r,
     uint64_t hi[5] = {};
     uint64_t carry = 0;
     for (int i = 0; i < 4; i++) {
-        u128 acc = (u128)t[i+4] * H_BETA + carry;
-        hi[i] = (uint64_t)acc;
-        carry  = (uint64_t)(acc >> 64);
+        h_muladd_u64(t[i+4], H_BETA, 0ULL, carry, &hi[i], &carry);
     }
     hi[4] = carry;
     carry = 0;
     for (int i = 0; i < 4; i++) {
-        u128 acc = (u128)t[i] + hi[i] + carry;
-        t[i] = (uint64_t)acc;
-        carry = (uint64_t)(acc >> 64);
+        uint64_t s = t[i] + hi[i];
+        uint64_t c = (s < t[i]) ? 1ULL : 0ULL;
+        uint64_t s2 = s + carry;
+        c += (s2 < s) ? 1ULL : 0ULL;
+        t[i] = s2;
+        carry = c;
     }
     uint64_t overflow = hi[4] + carry;
     // second reduction
-    u128 acc2 = (u128)overflow * H_BETA;
+    uint64_t acc2_lo = overflow * H_BETA;
+    uint64_t acc2_hi = h_mul_hi_u64(overflow, H_BETA);
+
     carry = 0;
-    u128 a0 = (u128)t[0] + (uint64_t)acc2; t[0] = (uint64_t)a0; carry = (uint64_t)(a0>>64);
-    u128 a1 = (u128)t[1] + (uint64_t)(acc2>>64) + carry; t[1]=(uint64_t)a1; carry=(uint64_t)(a1>>64);
-    u128 a2 = (u128)t[2] + carry; t[2]=(uint64_t)a2; carry=(uint64_t)(a2>>64);
-    u128 a3 = (u128)t[3] + carry; t[3]=(uint64_t)a3;
+
+    uint64_t a0 = t[0] + acc2_lo;
+    carry = (a0 < t[0]) ? 1ULL : 0ULL;
+    t[0] = a0;
+
+    uint64_t a1 = t[1] + acc2_hi;
+    uint64_t c1 = (a1 < t[1]) ? 1ULL : 0ULL;
+    uint64_t a1b = a1 + carry;
+    c1 += (a1b < a1) ? 1ULL : 0ULL;
+    t[1] = a1b;
+    carry = c1;
+
+    uint64_t a2 = t[2] + carry;
+    carry = (a2 < t[2]) ? 1ULL : 0ULL;
+    t[2] = a2;
+
+    t[3] += carry;
+
     r->d[0]=t[0]; r->d[1]=t[1]; r->d[2]=t[2]; r->d[3]=t[3];
     if (h_u256_cmp(r, &H_P) >= 0) h_u256_sub(r, r, &H_P);
 }
